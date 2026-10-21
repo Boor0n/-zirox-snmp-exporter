@@ -1,0 +1,29 @@
+{{define "content"}}
+<h1>Импорт устройств из CSV</h1>
+{{with .Error}}<div class="flash err">{{.}}</div>{{end}}
+{{if .Results}}
+<div class="flash ok">Добавлено: {{.Imported}} из {{len .Results}}. Полный опрос новых устройств идёт в фоне (не более 8 одновременно).</div>
+<table class="list">
+  <thead><tr><th>Строка</th><th>Устройство</th><th>Результат</th></tr></thead>
+  <tbody>{{range .Results}}<tr class="{{if not .OK}}errrow{{end}}"><td>{{.Line}}</td><td>{{.Name}}</td><td>{{.Msg}}</td></tr>{{end}}</tbody>
+</table>
+{{end}}
+<form method="post" action="/import" enctype="multipart/form-data" class="card form">
+  <p>Первая строка — заголовок. Обязательная колонка: <code>address</code>. Остальные необязательные:
+  <code>name</code>, <code>port</code>, <code>group</code>, <code>profile</code> (имя профиля опроса),
+  <code>credential</code> (имя сохранённых учётных данных) или <code>version</code> + <code>community</code> для v1/v2c.</p>
+  <pre class="code">name,address,group,profile,credential
+core-nx-01,10.0.0.1,DC1,Быстрый (6 с),Nexus RO v3
+acc-sw-12,10.0.1.12,DC1,,
+fw-asa-01,10.0.0.254,Edge,,</pre>
+  <label>Файл CSV <input type="file" name="file" accept=".csv,text/csv"></label>
+  <label>…или вставьте текст <textarea name="csv" rows="8" placeholder="name,address,group"></textarea></label>
+  <label>Учётные данные по умолчанию
+    <select name="default_credential"><option value="">— нет —</option>{{range .Credentials}}<option value="{{.ID}}">{{.Name}} (v{{.Version}})</option>{{end}}</select>
+  </label>
+  <label>Профиль по умолчанию
+    <select name="default_profile"><option value="">Глобальные настройки</option>{{range .Profiles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select>
+  </label>
+  <div class="buttons"><button class="primary">Импортировать</button></div>
+</form>
+{{end}}

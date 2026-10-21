@@ -1,0 +1,87 @@
+{{define "content"}}
+{{$d := .Device}}
+{{if .Discovering}}<div data-poll-status="/devices/{{$d.ID}}/status"></div>{{end}}
+<div class="bar">
+  <div>
+    <h1>{{$d.Name}} {{if not $d.Enabled}}<span class="badge">выключено</span>{{end}}</h1>
+    <div class="muted">{{$d.Address}}{{if ne $d.Port 161}}:{{$d.Port}}{{end}}{{with $d.Group}} · {{.}}{{end}} · {{.Credential.Name}} (v{{.Credential.Version}})</div>
+  </div>
+  <div class="buttons">
+    <form method="post" action="/devices/{{$d.ID}}/refresh"><button class="primary" {{if .Discovering}}disabled{{end}} title="Опросить устройство целиком и найти новые порты и датчики">{{if .Discovering}}Идёт полный опрос…{{else}}Refresh{{end}}</button></form>
+    <a class="btn" href="/devices/{{$d.ID}}/edit">Изменить</a>
+  </div>
+</div>
+
+<div class="grid3">
+  <div class="card">
+    <h3>Система</h3>
+    <div><b>{{if $d.SysName}}{{$d.SysName}}{{else}}—{{end}}</b></div>
+    <div class="muted small pre">{{$d.SysDescr}}</div>
+    <div class="small">Полный опрос: {{ago $d.LastDiscovery}}</div>
+    {{with $d.DiscoveryError}}<div class="flash err small">Ошибка полного опроса: {{.}}</div>{{end}}
+  </div>
+  <div class="card">
+    <h3>Опрос счётчиков</h3>
+    <div>Интервал: <b>{{secs .Eff.Interval}} с</b> <span class="muted">({{.Eff.Source}})</span></div>
+    <div class="small muted">Таймаут {{secs .Eff.Timeout}} с, повторов {{.Eff.Retries}}</div>
+    {{if .Snap}}
+      <div>Последний: {{ago .Snap.At}}, {{dur .Snap.Duration}}, значений: {{.SampleCount}}</div>
+      {{if .Snap.OK}}<span class="badge ok">OK</span>{{else}}<span class="badge bad">ошибка ×{{.Snap.Fails}}</span> <div class="small">{{.Snap.Err}}</div><div class="small muted">Последний успешный: {{ago .Snap.LastOK}}</div>{{end}}
+    {{else}}<div class="muted">Ещё не опрашивалось</div>{{end}}
+  </div>
+  <div class="card">
+    <h3>Prometheus</h3>
+    <div class="small">Метрики этого устройства:</div>
+    <a class="small" href="/probe?target={{$d.ID}}" target="_blank">/probe?target={{$d.ID}}</a>
+  </div>
+</div>
+
+{{if or .New .Missing}}
+<div class="flash warn">После последнего Refresh:
+  {{if .New}}<b>{{.New}}</b> новых (подсвечены){{end}}{{if and .New .Missing}}, {{end}}
+  {{if .Missing}}<b>{{.Missing}}</b> пропали с устройства (не опрашиваются){{end}}.
+  Проверьте галочки и нажмите «Применить».</div>
+{{end}}
+
+{{if .Groups}}
+<form method="post" action="/devices/{{$d.ID}}/selection" id="sel">
+  <div class="toolbar sticky">
+    <input type="search" placeholder="Фильтр: имя, описание" data-filter-text>
+    <label class="check"><input type="checkbox" data-filter-up> только up</label>
+    <label class="check"><input type="checkbox" data-filter-phys> только физические</label>
+    <label class="check"><input type="checkbox" data-filter-sel> только отмеченные</label>
+    <span class="spacer"></span>
+    <button type="button" data-select-visible="1">Отметить видимые</button>
+    <button type="button" data-select-visible="0">Снять видимые</button>
+    <button class="primary">Применить</button>
+  </div>
+  {{range .Groups}}
+  <h2>{{.Category}} <span class="muted small">отмечено {{.Selected}} из {{len .Objects}}</span></h2>
+  <table class="list objects">
+    <thead><tr>
+      <th class="w1"><input type="checkbox" data-check-group></th>
+      <th>Имя</th><th>Описание</th>
+      {{if eq .Category "Порты"}}<th>Тип</th><th>Скорость</th><th>Статус</th>{{end}}
+      <th></th>
+    </tr></thead>
+    <tbody>
+    {{range .Objects}}
+    <tr class="obj {{.State}}" data-up="{{if eq .OperStatus 1}}1{{end}}" data-phys="{{if or (ne .Kind "if") (physical .IfType)}}1{{end}}">
+      <td><input type="checkbox" name="obj" value="{{.ID}}" {{if .Selected}}checked{{end}}></td>
+      <td><b>{{.Name}}</b>{{if eq .Kind "if"}} <span class="muted small">#{{.Idx}}</span>{{end}}</td>
+      <td>{{if eq .Kind "if"}}{{.Alias}}{{if and .Alias (ne .Descr .Name)}} · {{end}}{{if ne .Descr .Name}}<span class="muted">{{.Descr}}</span>{{end}}{{else}}<span class="muted">{{.Descr}}</span>{{end}}</td>
+      {{if eq .Kind "if"}}<td>{{iftype .IfType}}</td><td>{{speed .SpeedMbps}}</td><td><span class="oper o{{.OperStatus}}">{{oper .OperStatus}}</span></td>{{end}}
+      <td>{{if eq .State "new"}}<span class="badge new">новый</span>{{else if eq .State "missing"}}<span class="badge bad">пропал</span>{{end}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <div class="buttons"><button class="primary">Применить</button></div>
+</form>
+{{else if not .Discovering}}
+<div class="card empty">Объекты ещё не найдены. Нажмите <b>Refresh</b>, чтобы опросить устройство целиком.</div>
+{{else}}
+<div class="card empty">Идёт полный опрос устройства, страница обновится автоматически…</div>
+{{end}}
+{{end}}

@@ -1,0 +1,28 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Start snmpd for the integration test
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq snmpd
+          cat > /tmp/snmpd.conf <<'CONF'
+          agentAddress udp:127.0.0.1:1161
+          rocommunity testcomm 127.0.0.1
+          createUser ziroxv3 SHA authpass123 AES privpass123
+          rouser ziroxv3 priv
+          CONF
+          sudo snmpd -C -c /tmp/snmpd.conf -Lf /tmp/snmpd.log
+      - run: go vet ./...
+      - run: go test -race ./...
+        env:
+          ZIROX_TEST_SNMP: 127.0.0.1:1161
+      - run: docker build -t zirox-snmp-exporter:ci .

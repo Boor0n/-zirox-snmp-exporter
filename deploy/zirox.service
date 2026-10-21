@@ -1,0 +1,21 @@
+[Unit]
+Description=Zirox SNMP Exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=zirox
+Group=zirox
+Environment=ZIROX_DATA_DIR=/var/lib/zirox
+Environment=ZIROX_LISTEN=:9116
+EnvironmentFile=-/etc/zirox/zirox.env
+ExecStart=/usr/local/bin/zirox
+Restart=on-failure
+StateDirectory=zirox
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+{{define "content"}}
+<h1>Настройки</h1>
+<h2>Глобальный опрос</h2>
+<p class="muted">Используется устройствами без профиля и без своего интервала. Кнопка применяет изменения сразу ко всем таким устройствам.</p>
+<form method="post" action="/settings" class="card form inline-form">
+  <label>Интервал, с <input name="interval_sec" type="number" min="{{.Min}}" value="{{.Settings.IntervalSec}}" required></label>
+  <label>Таймаут, с <input name="timeout_sec" type="number" min="1" value="{{.Settings.TimeoutSec}}"></label>
+  <label>Повторы <input name="retries" type="number" min="0" max="5" value="{{.Settings.Retries}}"></label>
+  <label class="check"><input type="checkbox" name="auto_select_up" {{if .Settings.AutoSelectUp}}checked{{end}}> Автоматически отмечать новые порты в состоянии up</label>
+  <div class="buttons"><button class="primary">Применить</button></div>
+</form>
+<h2>Пароль администратора ({{.Admin}})</h2>
+<form method="post" action="/settings/password" class="card form inline-form">
+  <label>Текущий пароль <input name="current" type="password" autocomplete="current-password" required></label>
+  <label>Новый пароль <input name="new" type="password" autocomplete="new-password" minlength="8" required></label>
+  <label>Ещё раз <input name="confirm" type="password" autocomplete="new-password" minlength="8" required></label>
+  <div class="buttons"><button>Сменить пароль</button></div>
+</form>
+{{end}}

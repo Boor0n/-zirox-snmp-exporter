@@ -1,0 +1,12 @@
+{{define "content"}}
+<div class="login">
+  <h1>Zirox SNMP Exporter</h1>
+  {{with .Error}}<div class="flash err">{{.}}</div>{{end}}
+  <form method="post" action="/login" class="card">
+    <input type="hidden" name="next" value="{{.Next}}">
+    <label>Логин <input name="user" autocomplete="username" required autofocus></label>
+    <label>Пароль <input name="password" type="password" autocomplete="current-password" required></label>
+    <button class="primary">Войти</button>
+  </form>
+</div>
+{{end}}

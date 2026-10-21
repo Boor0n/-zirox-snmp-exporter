@@ -1,0 +1,6 @@
+/data/
+/zirox
+*.db
+*.db-shm
+*.db-wal
+secret.key

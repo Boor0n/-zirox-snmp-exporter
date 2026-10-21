@@ -1,0 +1,31 @@
+{{define "credfields"}}
+<label>Версия SNMP
+  <select name="version" data-show-v3="v3-fields">
+    <option value="2c" {{if eq .Version "2c"}}selected{{end}}>v2c</option>
+    <option value="1" {{if eq .Version "1"}}selected{{end}}>v1</option>
+    <option value="3" {{if eq .Version "3"}}selected{{end}}>v3</option>
+  </select>
+</label>
+<div class="v12-fields">
+  <label>Community <input name="community" type="password" autocomplete="off" placeholder="{{if .ID}}оставьте пустым, чтобы не менять{{end}}"></label>
+</div>
+<div class="v3-fields">
+  <label>Пользователь <input name="v3_user" value="{{.V3User}}" autocomplete="off"></label>
+  <label>Уровень безопасности
+    <select name="v3_level">
+      <option value="authPriv" {{if eq .V3Level "authPriv"}}selected{{end}}>authPriv (аутентификация + шифрование)</option>
+      <option value="authNoPriv" {{if eq .V3Level "authNoPriv"}}selected{{end}}>authNoPriv</option>
+      <option value="noAuthNoPriv" {{if eq .V3Level "noAuthNoPriv"}}selected{{end}}>noAuthNoPriv</option>
+    </select>
+  </label>
+  <label>Протокол аутентификации
+    <select name="v3_auth_proto">{{$a := .V3AuthProto}}{{range $p := (list "SHA" "SHA256" "SHA384" "SHA512" "SHA224" "MD5")}}<option {{if eq $p $a}}selected{{end}}>{{$p}}</option>{{end}}</select>
+  </label>
+  <label>Пароль аутентификации <input name="v3_auth_pass" type="password" autocomplete="off" placeholder="{{if .ID}}оставьте пустым, чтобы не менять{{end}}"></label>
+  <label>Протокол шифрования
+    <select name="v3_priv_proto">{{$pp := .V3PrivProto}}{{range $p := (list "AES" "AES192" "AES256" "AES192C" "AES256C" "DES")}}<option {{if eq $p $pp}}selected{{end}}>{{$p}}</option>{{end}}</select>
+  </label>
+  <label>Пароль шифрования <input name="v3_priv_pass" type="password" autocomplete="off" placeholder="{{if .ID}}оставьте пустым, чтобы не менять{{end}}"></label>
+  <label>Context (необязательно) <input name="v3_context" value="{{.V3Context}}"></label>
+</div>
+{{end}}
