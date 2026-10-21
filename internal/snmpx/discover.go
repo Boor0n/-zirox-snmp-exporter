@@ -45,6 +45,9 @@ const (
 	oidHrStorageDescr  = "1.3.6.1.2.1.25.2.3.1.3"
 	oidHrStorageUnits  = "1.3.6.1.2.1.25.2.3.1.4"
 	oidUcdMemTotal     = "1.3.6.1.4.1.2021.4.5.0"
+	oidFwConnCurrent   = "1.3.6.1.4.1.9.9.147.1.2.2.2.1.5.40.6"
+	oidCrasNumSessions = "1.3.6.1.4.1.9.9.392.1.3.1.0"
+	oidBgpPeerRemoteAs = "1.3.6.1.2.1.15.3.1.9"
 )
 
 // hrStorage types worth exporting: RAM, virtual memory, fixed disks.
@@ -262,6 +265,19 @@ func discoverHealth(s Session) []store.Object {
 	}
 	if pdus, _ := s.Get([]string{oidUcdMemTotal}); len(pdus) > 0 {
 		add(KindUcdMem, "0", "system", 1, "")
+	}
+	// Firewalls (ASA): connection table and remote-access VPN sessions.
+	if pdus, _ := s.Get([]string{oidFwConnCurrent}); len(pdus) > 0 {
+		add(KindFwConn, "40", "connections", 1, "")
+	}
+	if pdus, _ := s.Get([]string{oidCrasNumSessions}); len(pdus) > 0 {
+		add(KindRAVPN, "0", "VPN sessions", 1, "")
+	}
+	// BGP neighbours, keyed by peer address.
+	if peers, _ := walkColumn(s, oidBgpPeerRemoteAs); len(peers) > 0 {
+		for idx, p := range peers {
+			add(KindBGPPeer, idx, idx, 1, strconv.Itoa(int(asFloat(p))))
+		}
 	}
 	return out
 }

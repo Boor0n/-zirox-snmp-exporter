@@ -206,3 +206,56 @@ func port(addr string) int {
 	}
 	return 161
 }
+
+func TestFirewallAndBGP(t *testing.T) {
+	a := snmptest.Switch(1)
+	a.Set("1.3.6.1.4.1.9.9.147.1.2.2.2.1.5.40.6", 1234)
+	a.Set("1.3.6.1.4.1.9.9.147.1.2.2.2.1.5.40.7", 5000)
+	a.Set("1.3.6.1.4.1.9.9.392.1.3.1.0", 17)
+	a.Set("1.3.6.1.4.1.9.9.392.1.3.3.0", 15)
+	a.Set("1.3.6.1.4.1.9.9.392.1.3.29.0", 2)
+	a.Set("1.3.6.1.2.1.15.3.1.9.10.0.0.2", 65002)
+	a.Set("1.3.6.1.2.1.15.3.1.2.10.0.0.2", 6)
+	a.Set("1.3.6.1.2.1.15.3.1.3.10.0.0.2", 2)
+	a.Set("1.3.6.1.2.1.15.3.1.16.10.0.0.2", 3600)
+	a.Set("1.3.6.1.2.1.15.3.1.10.10.0.0.2", uint(42))
+	_, objs := discover(t, a)
+	for _, k := range []struct{ kind, key string }{
+		{snmpx.KindFwConn, "connections"}, {snmpx.KindRAVPN, "VPN sessions"}, {snmpx.KindBGPPeer, "10.0.0.2"},
+	} {
+		if find(objs, k.kind, k.key) == nil {
+			t.Fatalf("%s %q not discovered", k.kind, k.key)
+		}
+	}
+	objs = snmpx.Merge(nil, objs, true)
+	s, _ := a.Dial()
+	samples, err := snmpx.Poll(s, objs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]float64{}
+	for _, x := range samples {
+		k := x.Name
+		for i := range x.Keys {
+			k += " " + x.Keys[i] + "=" + x.Values[i]
+		}
+		got[k] = x.Value
+	}
+	want := map[string]float64{
+		"zirox_firewall_connections type=current":                             1234,
+		"zirox_firewall_connections type=max":                                 5000,
+		"zirox_vpn_sessions type=all":                                         17,
+		"zirox_vpn_sessions type=l2l":                                         2,
+		"zirox_vpn_users":                                                     15,
+		"zirox_bgp_peer_state peer=10.0.0.2 remote_as=65002":                  6,
+		"zirox_bgp_peer_updates_received_total peer=10.0.0.2 remote_as=65002": 42,
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %v, want %v (got %v)", k, got[k], v, got)
+		}
+	}
+	if _, ok := got["zirox_vpn_sessions type=anyconnect"]; ok {
+		t.Error("a missing OID must not produce a sample")
+	}
+}

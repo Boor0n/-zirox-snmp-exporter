@@ -37,7 +37,7 @@ func Poll(s Session, objs []store.Object) ([]Sample, error) {
 			if (v1 && m.NotV1) || (!v1 && m.OnlyV1) {
 				continue
 			}
-			oid := m.OID + "." + o.Idx
+			oid := m.OID + "." + o.Idx + m.Suffix
 			if _, dup := byOID[oid]; dup {
 				continue
 			}
@@ -67,12 +67,17 @@ func Poll(s Session, objs []store.Object) ([]Sample, error) {
 			v *= w.obj.Factor
 		}
 		vals := k.Labels(w.obj)
-		if len(vals) < len(k.LabelKeys) {
-			vals = append(vals, w.metric.Window)
+		keys := k.LabelKeys
+		if len(vals) < len(keys) {
+			if w.metric.Window != "" {
+				vals = append(vals, w.metric.Window)
+			} else {
+				keys = keys[:len(vals)]
+			}
 		}
 		out = append(out, Sample{
 			Name: w.metric.Name, Help: w.metric.Help, Counter: w.metric.Counter,
-			Keys: k.LabelKeys, Values: vals, Value: v,
+			Keys: keys, Values: vals, Value: v,
 		})
 	}
 	return out, nil

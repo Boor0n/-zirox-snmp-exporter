@@ -4,10 +4,10 @@ SNMP-экспортер для Prometheus с веб-интерфейсом. Ус
 
 ## Как это работает
 
-1. **Добавление / Refresh.** Полный опрос: `ifTable`/`ifXTable`, CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-SYSTEM-EXT-MIB (Nexus), ENTITY-SENSOR-MIB, CISCO-ENVMON-MIB, HOST-RESOURCES-MIB, UCD-SNMP-MIB.
+1. **Добавление / Refresh.** Полный опрос: `ifTable`/`ifXTable`, CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-SYSTEM-EXT-MIB (Nexus), ENTITY-SENSOR-MIB, CISCO-ENVMON-MIB, HOST-RESOURCES-MIB, UCD-SNMP-MIB, CISCO-FIREWALL-MIB и CISCO-REMOTE-ACCESS-MONITOR-MIB (ASA), BGP4-MIB.
 2. **Выбор.** В карточке устройства все объекты показаны списком с галочками. По умолчанию отмечены физические порты в состоянии up и все объекты здоровья. Порты в состоянии down и VLAN-интерфейсы не отмечены.
 3. **Опрос.** Только отмеченные объекты, пачками до 30 OID в одном GET. Для 48-портового коммутатора с 10 отмеченными портами это 4 небольших запроса за интервал.
-4. **Refresh.** Повторный полный опрос. Новые порты подсвечиваются и, если они up, сразу отмечаются (это настраивается). Пропавшие помечаются и больше не опрашиваются. Ваши галочки сохраняются, порты сопоставляются по имени (`ifName`), а не по `ifIndex`.
+4. **Refresh.** Повторный полный опрос по кнопке или по расписанию (Settings → Scheduled refresh, например раз в неделю ночью; по умолчанию выключено). Новые порты подсвечиваются и, если они up, сразу отмечаются (это настраивается). Пропавшие помечаются и больше не опрашиваются. Ваши галочки сохраняются, порты сопоставляются по имени (`ifName`), а не по `ifIndex`.
 
 ### Частота опроса
 
@@ -32,15 +32,22 @@ docker logs zirox   # если ZIROX_ADMIN_PASSWORD пуст, здесь буд�
 
 Откройте `http://<сервер>:9116`.
 
-### Без Docker (бинарник + systemd)
+### Без Docker (systemd)
+
+Скачайте архив `zirox-<версия>-linux-amd64.tar.gz` со страницы Releases репозитория (для ARM-серверов `linux-arm64`), затем:
 
 ```bash
-CGO_ENABLED=0 go build -o zirox ./cmd/zirox      # нужен Go 1.26+
-sudo install -m 755 zirox /usr/local/bin/zirox
-sudo useradd --system --no-create-home zirox
-sudo mkdir -p /etc/zirox && echo 'ZIROX_ADMIN_PASSWORD=смените-меня' | sudo tee /etc/zirox/zirox.env
-sudo cp deploy/zirox.service /etc/systemd/system/ && sudo systemctl enable --now zirox
+tar -xzf zirox-*-linux-amd64.tar.gz && cd zirox-*-linux-amd64
+sudo ./install.sh
 ```
+
+Скрипт ставит бинарник в `/usr/local/bin/zirox`, создаёт пользователя `zirox`, сервис systemd, файл настроек `/etc/zirox/zirox.env` со случайным паролем admin (пароль выводится в конце) и запускает сервис. Данные лежат в `/var/lib/zirox`.
+
+- Обновление: распакуйте новый архив и снова запустите `sudo ./install.sh`. База, ключ и настройки сохраняются.
+- Удаление: `sudo ./install.sh --uninstall` (данные остаются).
+- Из исходников: `sudo deploy/install.sh` в клоне репозитория соберёт бинарник сам (нужен Go 1.26+).
+
+Новый релиз собирается автоматически при push тега: `git tag v0.2.0 && git push origin v0.2.0`.
 
 ### Переменные окружения
 
@@ -87,6 +94,10 @@ scrape_configs:
 
 Здоровье устройства: `zirox_cpu_utilization_percent{window}`, `zirox_memory_used_bytes`, `zirox_memory_free_bytes`, `zirox_memory_utilization_percent`, `zirox_memory_total_bytes`, `zirox_memory_available_bytes`, `zirox_temperature_celsius`, `zirox_sensor_value{unit}`, `zirox_sensor_status`, `zirox_envmon_{temperature,fan,psu}_state`, `zirox_storage_{size,used}_bytes`.
 
+Фаерволы (ASA): `zirox_firewall_connections{type="current"|"max"}`, `zirox_vpn_sessions{type="all"|"l2l"|"anyconnect"}`, `zirox_vpn_users`.
+
+BGP-соседи (BGP4-MIB, IPv4): `zirox_bgp_peer_state` (6 = established), `zirox_bgp_peer_admin_status`, `zirox_bgp_peer_established_seconds`, `zirox_bgp_peer_updates_received_total` с метками `peer`, `remote_as`.
+
 Служебные: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_device_info`.
 
 Примеры запросов:
@@ -99,7 +110,7 @@ zirox_poll_success == 0                             # устройства, ко
 
 ### Алерты
 
-`deploy/alerts.yml` — готовые правила для Prometheus: устройство не отвечает 5 минут, CPU > 90 %, память > 90 %, температура > 70 °C, проблема с БП/вентилятором/датчиком (CISCO-ENVMON), диск заполнен > 90 %, порт упал при admin up, ошибки на порту, загрузка порта > 90 %. Пороги правьте под себя.
+`deploy/alerts.yml` — готовые правила для Prometheus: устройство не отвечает 5 минут, CPU > 90 %, память > 90 %, температура > 70 °C, проблема с БП/вентилятором/датчиком (CISCO-ENVMON), диск заполнен > 90 %, порт упал при admin up, ошибки на порту, загрузка порта > 90 %, BGP-сосед не в состоянии established. Пороги правьте под себя.
 
 ```yaml
 rule_files:
@@ -114,7 +125,8 @@ rule_files:
 
 - **Overview** — сколько устройств, сколько не отвечает, упавшие порты, аппаратные проблемы, таблица всех устройств со временем последнего успешного опроса;
 - **Health** — CPU, память, температура, диски, состояние БП и вентиляторов;
-- **Interfaces** — входящий/исходящий трафик, загрузка в %, ошибки и discards, таблица портов со статусом и скоростью.
+- **Interfaces** — входящий/исходящий трафик, загрузка в %, ошибки и discards, таблица портов со статусом и скоростью;
+- **Firewall and routing** — соединения и VPN-сессии ASA, таблица BGP-соседей.
 
 Так как имена метрик портов совпадают со стандартным snmp_exporter, подходят и готовые дашборды из каталога Grafana.
 
@@ -127,6 +139,10 @@ name,address,group,profile,credential
 core-nx-01,10.0.0.1,DC1,Fast (6 s),Nexus RO v3
 acc-sw-12,10.0.1.12,DC1,,
 ```
+
+## Журнал изменений
+
+Страница «Change log» показывает, кто и когда добавил, изменил или удалил устройство, учётные данные, профиль, поменял галочки (какие объекты добавлены и сняты), настройки и пароль, а также входы в систему (и неудачные) и запуски Refresh, в том числе по расписанию. Записи хранятся год.
 
 ## Безопасность
 

@@ -94,3 +94,15 @@ groups:
           severity: warning
         annotations:
           summary: "{{ $labels.ifName }} on {{ $labels.device }} above 90% of link speed"
+
+  - name: zirox-routing
+    rules:
+      - alert: ZiroxBGPPeerDown
+        # Peers that are administratively enabled but not established.
+        expr: zirox_bgp_peer_state != 6 and on(device, peer) zirox_bgp_peer_admin_status == 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "BGP peer {{ $labels.peer }} (AS {{ $labels.remote_as }}) on {{ $labels.device }} is down"
+          description: "State {{ $value }} (1=idle, 2=connect, 3=active, 4=opensent, 5=openconfirm, 6=established)."

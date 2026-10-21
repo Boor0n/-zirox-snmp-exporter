@@ -1,6 +1,7 @@
 package web
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -120,15 +121,24 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		next = "/"
 	}
 	if !s.checkPassword(user, pass) {
+		_ = s.st.AddAudit(user, "login failed", clientIP(r), "")
 		time.Sleep(500 * time.Millisecond)
 		s.render(w, r, "login", map[string]any{"Next": next, "Error": "Wrong username or password"})
 		return
 	}
 	s.setSession(w, user)
+	_ = s.st.AddAudit(user, "login", clientIP(r), "")
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func clientIP(r *http.Request) string {
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

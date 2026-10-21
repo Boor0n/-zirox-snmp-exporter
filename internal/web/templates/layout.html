@@ -18,6 +18,7 @@
     <a href="/import" {{if eq .Page "import"}}class="on"{{end}}>Import</a>
     <a href="/settings" {{if eq .Page "settings"}}class="on"{{end}}>Settings</a>
     <a href="/prometheus" {{if eq .Page "prometheus"}}class="on"{{end}}>Prometheus</a>
+    <a href="/audit" {{if eq .Page "audit"}}class="on"{{end}}>Change log</a>
   </nav>
   <form method="post" action="/logout" class="logout"><span>{{.User}}</span><button class="link">Log out</button></form>
 </header>

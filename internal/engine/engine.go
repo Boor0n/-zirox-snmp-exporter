@@ -49,6 +49,11 @@ type Options struct {
 	// NoJitter starts the first poll right away instead of at a random
 	// point of the interval (used by tests).
 	NoJitter bool
+	// AutoRefreshCheck is how often the scheduled refresh looks for due
+	// devices (default one minute).
+	AutoRefreshCheck time.Duration
+	// Now replaces time.Now for the scheduled refresh (used by tests).
+	Now func() time.Time
 }
 
 // Engine runs one poll loop per enabled device.
@@ -59,6 +64,8 @@ type Engine struct {
 	log  *slog.Logger
 
 	noJitter bool
+	arCheck  time.Duration
+	now      func() time.Time
 
 	pollSem chan struct{}
 	discSem chan struct{}
@@ -69,6 +76,7 @@ type Engine struct {
 	snaps     map[int64]*Snapshot
 	locks     map[int64]*sync.Mutex
 	running   map[int64]bool // discovery in progress
+	autoTried map[int64]time.Time
 	wg        sync.WaitGroup
 	discCount int
 }
@@ -87,14 +95,22 @@ func New(st *store.Store, box *secret.Box, o Options) *Engine {
 	if o.Log == nil {
 		o.Log = slog.Default()
 	}
+	if o.AutoRefreshCheck <= 0 {
+		o.AutoRefreshCheck = time.Minute
+	}
+	if o.Now == nil {
+		o.Now = time.Now
+	}
 	return &Engine{
 		st: st, box: box, dial: o.Dial, log: o.Log, noJitter: o.NoJitter,
-		pollSem: make(chan struct{}, o.MaxConcurrentPolls),
-		discSem: make(chan struct{}, o.MaxConcurrentDiscovery),
-		loops:   map[int64]context.CancelFunc{},
-		snaps:   map[int64]*Snapshot{},
-		locks:   map[int64]*sync.Mutex{},
-		running: map[int64]bool{},
+		arCheck: o.AutoRefreshCheck, now: o.Now,
+		autoTried: map[int64]time.Time{},
+		pollSem:   make(chan struct{}, o.MaxConcurrentPolls),
+		discSem:   make(chan struct{}, o.MaxConcurrentDiscovery),
+		loops:     map[int64]context.CancelFunc{},
+		snaps:     map[int64]*Snapshot{},
+		locks:     map[int64]*sync.Mutex{},
+		running:   map[int64]bool{},
 	}
 }
 
@@ -103,7 +119,67 @@ func (e *Engine) Start(ctx context.Context) error {
 	e.mu.Lock()
 	e.ctx = ctx
 	e.mu.Unlock()
+	e.wg.Add(1)
+	go e.autoRefreshLoop(ctx)
 	return e.ReloadAll()
+}
+
+// autoRefreshLoop re-runs full discovery of devices whose last discovery is
+// older than the configured period, so new ports are picked up without a
+// click. Concurrency is bounded by the discovery semaphore.
+func (e *Engine) autoRefreshLoop(ctx context.Context) {
+	defer e.wg.Done()
+	t := time.NewTicker(e.arCheck)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			e.AutoRefreshDue()
+		}
+	}
+}
+
+// AutoRefreshDue starts discovery of every device that is due for a
+// scheduled refresh and returns how many were started.
+func (e *Engine) AutoRefreshDue() int {
+	st := e.st.Settings()
+	now := e.now()
+	if st.AutoRefreshHours <= 0 || !st.InRefreshWindow(now) {
+		return 0
+	}
+	period := time.Duration(st.AutoRefreshHours) * time.Hour
+	devs, err := e.st.Devices()
+	if err != nil {
+		e.log.Error("scheduled refresh", "err", err)
+		return 0
+	}
+	started := 0
+	for _, d := range devs {
+		if !d.Enabled || d.LastDiscovery.IsZero() || now.Sub(d.LastDiscovery) < period {
+			continue
+		}
+		// A device that failed discovery keeps its old timestamp; do not
+		// retry it before the next period.
+		e.mu.Lock()
+		tried := e.autoTried[d.ID]
+		e.mu.Unlock()
+		if !tried.IsZero() && now.Sub(tried) < period {
+			continue
+		}
+		if e.Refresh(d.ID) {
+			e.mu.Lock()
+			e.autoTried[d.ID] = now
+			e.mu.Unlock()
+			_ = e.st.AddAudit("system", "scheduled refresh", d.Name, "")
+			started++
+		}
+	}
+	if started > 0 {
+		e.log.Info("scheduled refresh started", "devices", started)
+	}
+	return started
 }
 
 // Wait blocks until all loops have stopped after the context is cancelled.
@@ -331,6 +407,9 @@ func (e *Engine) Snapshot(id int64) *Snapshot {
 	defer e.mu.Unlock()
 	return e.snaps[id]
 }
+
+// MaxConcurrentDiscovery is how many full discoveries may run at once.
+func (e *Engine) MaxConcurrentDiscovery() int { return cap(e.discSem) }
 
 // Discovering reports whether a discovery of the device is in progress.
 func (e *Engine) Discovering(id int64) bool {

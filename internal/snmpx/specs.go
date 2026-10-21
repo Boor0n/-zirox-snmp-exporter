@@ -17,6 +17,9 @@ const (
 	KindEnvTemp     = "temp_envmon"
 	KindEnvFan      = "fan_envmon"
 	KindEnvPSU      = "psu_envmon"
+	KindFwConn      = "conn_firewall"
+	KindRAVPN       = "vpn_cisco"
+	KindBGPPeer     = "bgp_peer"
 )
 
 // Metric is one value polled per object: OID base + "." + object index.
@@ -24,8 +27,9 @@ type Metric struct {
 	Name    string
 	Help    string
 	OID     string
+	Suffix  string // appended after the object index
 	Counter bool
-	Window  string  // value of the "window" label for CPU metrics
+	Window  string  // value of the last label (CPU "window", firewall/VPN "type")
 	Scale   float64 // constant multiplier (0 = 1)
 	Factor  bool    // multiply by the object's discovered factor
 	NotV1   bool    // 64-bit counters are not available over SNMPv1
@@ -151,10 +155,42 @@ var Kinds = map[string]Kind{
 			{Name: "zirox_envmon_psu_state", Help: "CISCO-ENVMON power supply state (1=normal, 2=warning, 3=critical, 4=shutdown, 5=notPresent, 6=notFunctioning).", OID: "1.3.6.1.4.1.9.9.13.1.5.1.3"},
 		},
 	},
+	// CISCO-FIREWALL-MIB cfwConnectionStatValue, indexed by service (40 = IP)
+	// and stat type (6 = currently in use, 7 = highest since boot).
+	KindFwConn: {
+		Category: "Firewall", LabelKeys: []string{"type"},
+		Labels: func(store.Object) []string { return nil },
+		Metrics: []Metric{
+			{Name: "zirox_firewall_connections", Help: "Firewall connections (type=current or max since boot).", OID: "1.3.6.1.4.1.9.9.147.1.2.2.2.1.5", Suffix: ".6", Window: "current"},
+			{Name: "zirox_firewall_connections", Help: "Firewall connections (type=current or max since boot).", OID: "1.3.6.1.4.1.9.9.147.1.2.2.2.1.5", Suffix: ".7", Window: "max"},
+		},
+	},
+	// CISCO-REMOTE-ACCESS-MONITOR-MIB crasActivity scalars (ASA).
+	KindRAVPN: {
+		Category: "Firewall", LabelKeys: []string{"type"},
+		Labels: func(store.Object) []string { return nil },
+		Metrics: []Metric{
+			{Name: "zirox_vpn_sessions", Help: "Active VPN sessions by type.", OID: "1.3.6.1.4.1.9.9.392.1.3.1", Window: "all"},
+			{Name: "zirox_vpn_sessions", Help: "Active VPN sessions by type.", OID: "1.3.6.1.4.1.9.9.392.1.3.29", Window: "l2l"},
+			{Name: "zirox_vpn_sessions", Help: "Active VPN sessions by type.", OID: "1.3.6.1.4.1.9.9.392.1.3.35", Window: "anyconnect"},
+			{Name: "zirox_vpn_users", Help: "Active VPN users.", OID: "1.3.6.1.4.1.9.9.392.1.3.3"},
+		},
+	},
+	// BGP4-MIB bgpPeerTable, indexed by the peer's IPv4 address.
+	KindBGPPeer: {
+		Category: "Routing", LabelKeys: []string{"peer", "remote_as"},
+		Labels: func(o store.Object) []string { return []string{o.Idx, o.Descr} },
+		Metrics: []Metric{
+			{Name: "zirox_bgp_peer_state", Help: "BGP peer state (1=idle, 2=connect, 3=active, 4=opensent, 5=openconfirm, 6=established).", OID: "1.3.6.1.2.1.15.3.1.2"},
+			{Name: "zirox_bgp_peer_admin_status", Help: "BGP peer admin status (1=stop, 2=start).", OID: "1.3.6.1.2.1.15.3.1.3"},
+			{Name: "zirox_bgp_peer_established_seconds", Help: "Seconds the peer has been in (or was last in) the established state.", OID: "1.3.6.1.2.1.15.3.1.16"},
+			{Name: "zirox_bgp_peer_updates_received_total", Help: "BGP UPDATE messages received from the peer.", OID: "1.3.6.1.2.1.15.3.1.10", Counter: true},
+		},
+	},
 }
 
 // Categories in display order.
-var Categories = []string{"Ports", "CPU", "Memory", "Sensors", "Storage"}
+var Categories = []string{"Ports", "CPU", "Memory", "Sensors", "Storage", "Firewall", "Routing"}
 
 // CategoryOf returns the UI section of an object kind.
 func CategoryOf(kind string) string {

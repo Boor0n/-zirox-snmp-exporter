@@ -25,6 +25,14 @@ tests:
         values: '0+7500000000x30'
       - series: 'ifHighSpeed{device="sw1",ifName="Eth1/3",ifAlias="",ifIndex="3"}'
         values: '1000x30'
+      - series: 'zirox_bgp_peer_state{device="sw1",peer="10.0.0.2",remote_as="65002"}'
+        values: '6 3x10'
+      - series: 'zirox_bgp_peer_admin_status{device="sw1",peer="10.0.0.2",remote_as="65002"}'
+        values: '2x10'
+      - series: 'zirox_bgp_peer_state{device="sw1",peer="10.0.0.3",remote_as="65003"}'
+        values: '1x10'
+      - series: 'zirox_bgp_peer_admin_status{device="sw1",peer="10.0.0.3",remote_as="65003"}'
+        values: '1x10'
     alert_rule_test:
       - eval_time: 6m
         alertname: ZiroxDeviceUnreachable
@@ -59,3 +67,10 @@ tests:
           - exp_labels: {severity: warning, device: sw1, ifName: Eth1/3, ifIndex: "3"}
             exp_annotations:
               summary: "Eth1/3 on sw1 above 90% of link speed"
+      - eval_time: 7m
+        alertname: ZiroxBGPPeerDown
+        exp_alerts:
+          - exp_labels: {severity: critical, device: sw1, peer: 10.0.0.2, remote_as: "65002"}
+            exp_annotations:
+              summary: "BGP peer 10.0.0.2 (AS 65002) on sw1 is down"
+              description: "State 3 (1=idle, 2=connect, 3=active, 4=opensent, 5=openconfirm, 6=established)."

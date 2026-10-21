@@ -76,6 +76,15 @@ CREATE TABLE IF NOT EXISTS objects (
 	UNIQUE(device_id, kind, key)
 );
 CREATE INDEX IF NOT EXISTS objects_device ON objects(device_id);
+CREATE TABLE IF NOT EXISTS audit_log (
+	id      INTEGER PRIMARY KEY AUTOINCREMENT,
+	at      INTEGER NOT NULL,
+	user    TEXT NOT NULL,
+	action  TEXT NOT NULL,
+	target  TEXT NOT NULL DEFAULT '',
+	details TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log(at);
 `
 
 // Object states.
@@ -93,7 +102,14 @@ const (
 	SettingAutoUp   = "global_auto_select_up"
 	SettingAdmin    = "admin_user"
 	SettingAdminPw  = "admin_hash"
+
+	SettingAutoRefreshHours = "auto_refresh_hours"
+	SettingAutoRefreshFrom  = "auto_refresh_from"
+	SettingAutoRefreshTo    = "auto_refresh_to"
 )
+
+// AuditRetention is how long audit log entries are kept.
+const AuditRetention = 365 * 24 * time.Hour
 
 // MinIntervalSec is the shortest poll interval allowed anywhere.
 const MinIntervalSec = 5
@@ -166,6 +182,35 @@ type Settings struct {
 	TimeoutSec   int
 	Retries      int
 	AutoSelectUp bool
+	// AutoRefreshHours re-runs full discovery of every enabled device this
+	// often (0 = off), only between hours AutoRefreshFrom and AutoRefreshTo
+	// local time (equal values = any time).
+	AutoRefreshHours int
+	AutoRefreshFrom  int
+	AutoRefreshTo    int
+}
+
+// InRefreshWindow reports whether t falls into the scheduled refresh hours.
+func (st Settings) InRefreshWindow(t time.Time) bool {
+	h, from, to := t.Hour(), st.AutoRefreshFrom, st.AutoRefreshTo
+	switch {
+	case from == to:
+		return true
+	case from < to:
+		return h >= from && h < to
+	default: // window crosses midnight
+		return h >= from || h < to
+	}
+}
+
+// AuditEntry is one line of the change log.
+type AuditEntry struct {
+	ID      int64
+	At      time.Time
+	User    string
+	Action  string
+	Target  string
+	Details string
 }
 
 // Store wraps the database.
@@ -222,8 +267,14 @@ func (s *Store) Settings() Settings {
 		TimeoutSec:   max(s.intSetting(SettingTimeout, 5), 1),
 		Retries:      max(s.intSetting(SettingRetries, 1), 0),
 		AutoSelectUp: s.GetSetting(SettingAutoUp, "1") == "1",
+
+		AutoRefreshHours: max(s.intSetting(SettingAutoRefreshHours, 0), 0),
+		AutoRefreshFrom:  hour(s.intSetting(SettingAutoRefreshFrom, 1)),
+		AutoRefreshTo:    hour(s.intSetting(SettingAutoRefreshTo, 5)),
 	}
 }
+
+func hour(h int) int { return min(max(h, 0), 23) }
 
 // SaveSettings stores the global defaults.
 func (s *Store) SaveSettings(st Settings) error {
@@ -236,6 +287,10 @@ func (s *Store) SaveSettings(st Settings) error {
 		SettingTimeout:  strconv.Itoa(max(st.TimeoutSec, 1)),
 		SettingRetries:  strconv.Itoa(max(st.Retries, 0)),
 		SettingAutoUp:   auto,
+
+		SettingAutoRefreshHours: strconv.Itoa(max(st.AutoRefreshHours, 0)),
+		SettingAutoRefreshFrom:  strconv.Itoa(hour(st.AutoRefreshFrom)),
+		SettingAutoRefreshTo:    strconv.Itoa(hour(st.AutoRefreshTo)),
 	} {
 		if err := s.SetSetting(k, v); err != nil {
 			return err
@@ -579,6 +634,49 @@ func (s *Store) ObjectCounts() (map[int64][2]int, error) {
 			return nil, err
 		}
 		out[id] = [2]int{sel, total}
+	}
+	return out, rows.Err()
+}
+
+// ---- audit log ----
+
+// AddAudit records who changed what, and drops entries older than AuditRetention.
+func (s *Store) AddAudit(user, action, target, details string) error {
+	now := time.Now()
+	if _, err := s.db.Exec(`INSERT INTO audit_log(at,user,action,target,details) VALUES(?,?,?,?,?)`,
+		now.UnixMilli(), user, action, target, details); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM audit_log WHERE at < ?`, now.Add(-AuditRetention).UnixMilli())
+	return err
+}
+
+// AuditLog returns the newest entries first. A non-empty query filters by
+// user, action, target or details.
+func (s *Store) AuditLog(query string, limit int) ([]AuditEntry, error) {
+	q := `SELECT id,at,user,action,target,details FROM audit_log`
+	var args []any
+	if query != "" {
+		like := "%" + query + "%"
+		q += ` WHERE user LIKE ? OR action LIKE ? OR target LIKE ? OR details LIKE ?`
+		args = append(args, like, like, like, like)
+	}
+	q += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		var at int64
+		if err := rows.Scan(&e.ID, &at, &e.User, &e.Action, &e.Target, &e.Details); err != nil {
+			return nil, err
+		}
+		e.At = time.UnixMilli(at)
+		out = append(out, e)
 	}
 	return out, rows.Err()
 }
