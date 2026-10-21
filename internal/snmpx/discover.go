@@ -75,7 +75,7 @@ func Discover(s Session) (SystemInfo, []store.Object, error) {
 	var info SystemInfo
 	pdus, err := s.Get([]string{oidSysDescr, oidSysObjectID, oidSysName})
 	if err != nil {
-		return info, nil, fmt.Errorf("устройство не отвечает: %w", err)
+		return info, nil, fmt.Errorf("device not responding: %w", err)
 	}
 	for _, p := range pdus {
 		switch trimOID(p.Name) {
@@ -88,7 +88,7 @@ func Discover(s Session) (SystemInfo, []store.Object, error) {
 		}
 	}
 	if len(pdus) == 0 {
-		return info, nil, fmt.Errorf("устройство не вернуло sysDescr/sysName")
+		return info, nil, fmt.Errorf("device returned no sysDescr/sysName")
 	}
 
 	var objs []store.Object

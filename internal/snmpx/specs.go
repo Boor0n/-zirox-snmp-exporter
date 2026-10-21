@@ -47,7 +47,7 @@ var cpuLabels = []string{"index", "name", "window"}
 // Kinds maps an object kind to its spec.
 var Kinds = map[string]Kind{
 	KindIf: {
-		Category:  "Порты",
+		Category:  "Ports",
 		LabelKeys: []string{"ifIndex", "ifName", "ifDescr", "ifAlias"},
 		Labels:    func(o store.Object) []string { return []string{o.Idx, o.Name, o.Descr, o.Alias} },
 		Metrics: []Metric{
@@ -90,20 +90,20 @@ var Kinds = map[string]Kind{
 		},
 	},
 	KindCiscoMem: {
-		Category: "Память", LabelKeys: []string{"index", "name"}, Labels: idxName,
+		Category: "Memory", LabelKeys: []string{"index", "name"}, Labels: idxName,
 		Metrics: []Metric{
 			{Name: "zirox_memory_used_bytes", Help: "Memory used in bytes.", OID: "1.3.6.1.4.1.9.9.48.1.1.1.5"},
 			{Name: "zirox_memory_free_bytes", Help: "Memory free in bytes.", OID: "1.3.6.1.4.1.9.9.48.1.1.1.6"},
 		},
 	},
 	KindNexusMem: {
-		Category: "Память", LabelKeys: []string{"index", "name"}, Labels: idxName,
+		Category: "Memory", LabelKeys: []string{"index", "name"}, Labels: idxName,
 		Metrics: []Metric{
 			{Name: "zirox_memory_utilization_percent", Help: "Memory utilization in percent.", OID: "1.3.6.1.4.1.9.9.305.1.1.2"},
 		},
 	},
 	KindUcdMem: {
-		Category: "Память", LabelKeys: []string{"index", "name"}, Labels: idxName,
+		Category: "Memory", LabelKeys: []string{"index", "name"}, Labels: idxName,
 		Metrics: []Metric{
 			{Name: "zirox_memory_total_bytes", Help: "Total memory in bytes.", OID: "1.3.6.1.4.1.2021.4.5", Scale: 1024},
 			{Name: "zirox_memory_available_bytes", Help: "Available memory in bytes.", OID: "1.3.6.1.4.1.2021.4.6", Scale: 1024},
@@ -112,41 +112,41 @@ var Kinds = map[string]Kind{
 		},
 	},
 	KindHostStorage: {
-		Category: "Хранилище", LabelKeys: []string{"index", "name"}, Labels: idxName,
+		Category: "Storage", LabelKeys: []string{"index", "name"}, Labels: idxName,
 		Metrics: []Metric{
 			{Name: "zirox_storage_size_bytes", Help: "Storage size in bytes.", OID: "1.3.6.1.2.1.25.2.3.1.5", Factor: true},
 			{Name: "zirox_storage_used_bytes", Help: "Storage used in bytes.", OID: "1.3.6.1.2.1.25.2.3.1.6", Factor: true},
 		},
 	},
 	KindEntTemp: {
-		Category: "Датчики", LabelKeys: []string{"index", "name"}, Labels: idxName,
+		Category: "Sensors", LabelKeys: []string{"index", "name"}, Labels: idxName,
 		Metrics: []Metric{
 			{Name: "zirox_temperature_celsius", Help: "Temperature in degrees Celsius.", OID: "1.3.6.1.2.1.99.1.1.1.4", Factor: true},
 			{Name: "zirox_sensor_status", Help: "ENTITY-SENSOR status (1=ok, 2=unavailable, 3=nonoperational).", OID: "1.3.6.1.2.1.99.1.1.1.5"},
 		},
 	},
 	KindEntSensor: {
-		Category: "Датчики", LabelKeys: []string{"index", "name", "unit"},
+		Category: "Sensors", LabelKeys: []string{"index", "name", "unit"},
 		Labels: func(o store.Object) []string { return []string{o.Idx, o.Name, o.Descr} },
 		Metrics: []Metric{
 			{Name: "zirox_sensor_value", Help: "ENTITY-SENSOR value in the unit given by the unit label.", OID: "1.3.6.1.2.1.99.1.1.1.4", Factor: true},
 		},
 	},
 	KindEnvTemp: {
-		Category: "Датчики", LabelKeys: []string{"index", "name"}, Labels: idxName,
+		Category: "Sensors", LabelKeys: []string{"index", "name"}, Labels: idxName,
 		Metrics: []Metric{
 			{Name: "zirox_temperature_celsius", Help: "Temperature in degrees Celsius.", OID: "1.3.6.1.4.1.9.9.13.1.3.1.3"},
 			{Name: "zirox_envmon_temperature_state", Help: "CISCO-ENVMON state (1=normal, 2=warning, 3=critical, 4=shutdown, 5=notPresent, 6=notFunctioning).", OID: "1.3.6.1.4.1.9.9.13.1.3.1.6"},
 		},
 	},
 	KindEnvFan: {
-		Category: "Датчики", LabelKeys: []string{"index", "name"}, Labels: idxName,
+		Category: "Sensors", LabelKeys: []string{"index", "name"}, Labels: idxName,
 		Metrics: []Metric{
 			{Name: "zirox_envmon_fan_state", Help: "CISCO-ENVMON fan state (1=normal, 2=warning, 3=critical, 4=shutdown, 5=notPresent, 6=notFunctioning).", OID: "1.3.6.1.4.1.9.9.13.1.4.1.3"},
 		},
 	},
 	KindEnvPSU: {
-		Category: "Датчики", LabelKeys: []string{"index", "name"}, Labels: idxName,
+		Category: "Sensors", LabelKeys: []string{"index", "name"}, Labels: idxName,
 		Metrics: []Metric{
 			{Name: "zirox_envmon_psu_state", Help: "CISCO-ENVMON power supply state (1=normal, 2=warning, 3=critical, 4=shutdown, 5=notPresent, 6=notFunctioning).", OID: "1.3.6.1.4.1.9.9.13.1.5.1.3"},
 		},
@@ -154,12 +154,12 @@ var Kinds = map[string]Kind{
 }
 
 // Categories in display order.
-var Categories = []string{"Порты", "CPU", "Память", "Датчики", "Хранилище"}
+var Categories = []string{"Ports", "CPU", "Memory", "Sensors", "Storage"}
 
 // CategoryOf returns the UI section of an object kind.
 func CategoryOf(kind string) string {
 	if k, ok := Kinds[kind]; ok {
 		return k.Category
 	}
-	return "Другое"
+	return "Other"
 }

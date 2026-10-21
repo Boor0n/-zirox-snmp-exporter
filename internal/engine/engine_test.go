@@ -49,7 +49,7 @@ func TestResolvePriority(t *testing.T) {
 	if eff.Retries != 0 || eff.Timeout > 4800*time.Millisecond {
 		t.Errorf("timeout not clamped: %+v", eff)
 	}
-	if eff := e.Resolve(store.Device{ProfileID: p.ID, IntervalSec: 30}); eff.Interval != 30*time.Second || eff.Source != "устройство" {
+	if eff := e.Resolve(store.Device{ProfileID: p.ID, IntervalSec: 30}); eff.Interval != 30*time.Second || eff.Source != "device" {
 		t.Errorf("device override: %+v", eff)
 	}
 	if eff := e.Resolve(store.Device{IntervalSec: 1}); eff.Interval != store.MinIntervalSec*time.Second {

@@ -142,7 +142,7 @@ func TestEndToEnd(t *testing.T) {
 	if code, body := e.get("/"); code != 200 || !strings.Contains(body, `name="password"`) {
 		t.Fatalf("expected login page, got %d", code)
 	}
-	if code, body := e.post("/login", url.Values{"user": {"admin"}, "password": {"wrong"}}); code != 200 || !strings.Contains(body, "Неверный") {
+	if code, body := e.post("/login", url.Values{"user": {"admin"}, "password": {"wrong"}}); code != 200 || !strings.Contains(body, "Wrong username") {
 		t.Fatalf("bad password accepted: %d", code)
 	}
 	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
@@ -150,11 +150,11 @@ func TestEndToEnd(t *testing.T) {
 	// Test connection with a wrong community, then add the device.
 	devForm := url.Values{"address": {"10.0.0.1"}, "name": {"core-nx-01"}, "port": {"161"}, "enabled": {"on"},
 		"credential_id": {"new"}, "version": {"2c"}, "community": {"nope"}, "profile_id": {"0"}}
-	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "Нет ответа") {
+	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "No response") {
 		t.Fatal("test with wrong community should fail")
 	}
 	devForm.Set("community", "public")
-	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "Устройство ответило: core-nx-01") {
+	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "Device answered: core-nx-01") {
 		t.Fatalf("test connection failed: %s", flash(body))
 	}
 	if _, body := e.post("/devices/new", devForm); !strings.Contains(body, "core-nx-01") {
@@ -169,7 +169,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	_, card := e.get("/devices/1")
-	for _, want := range []string{"Ethernet1/3", "Vlan10", "Supervisor CPU", "Module 1 Inlet Temp", "Порты", "Датчики"} {
+	for _, want := range []string{"Ethernet1/3", "Vlan10", "Supervisor CPU", "Module 1 Inlet Temp", "Ports", "Sensors"} {
 		if !strings.Contains(card, want) {
 			t.Errorf("device card lacks %q", want)
 		}
@@ -184,7 +184,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}
 	start := time.Now()
-	if _, body := e.post("/devices/1/selection", form); !strings.Contains(body, "опрашивается 2 объектов") {
+	if _, body := e.post("/devices/1/selection", form); !strings.Contains(body, "polling 2 objects") {
 		t.Fatalf("selection not applied: %s", flash(body))
 	}
 	snap := e.waitPoll(1, start)
@@ -227,7 +227,7 @@ func TestEndToEnd(t *testing.T) {
 	// Profile beats global, device beats profile.
 	profs, _ := e.st.Profiles()
 	devForm.Set("interval_sec", "")
-	devForm.Set("profile_id", fmt.Sprint(profs[2].ID)) // Редкий (300 с)
+	devForm.Set("profile_id", fmt.Sprint(profs[2].ID)) // Slow (300 s)
 	e.post("/devices/1/edit", devForm)
 	if sd := e.sd(); sd["__scrape_interval__"] != "300s" {
 		t.Fatalf("profile interval not applied: %v", sd)
@@ -242,7 +242,7 @@ func TestEndToEnd(t *testing.T) {
 	e.post("/devices/1/refresh", nil)
 	e.waitDiscovery(1)
 	_, card = e.get("/devices/1")
-	if !strings.Contains(card, "Ethernet1/40") || !strings.Contains(card, "новых") {
+	if !strings.Contains(card, "Ethernet1/40") || !strings.Contains(card, "new (highlighted)") {
 		t.Error("refresh did not show the new port")
 	}
 	objs, _ = e.st.Objects(1)
@@ -263,7 +263,7 @@ func TestEndToEnd(t *testing.T) {
 	// CSV import.
 	e.agents["10.0.0.2"] = snmptest.Switch(2)
 	_, body := e.post("/import", url.Values{"csv": {"name,address,group,version,community\nacc-1,10.0.0.2,DC1,2c,public\nbad,,DC1,2c,public\n"}})
-	if !strings.Contains(body, "Добавлено: 1 из 2") {
+	if !strings.Contains(body, "Added: 1 of 2") {
 		t.Fatalf("import: %s", flash(body))
 	}
 	if creds, _ := e.st.Credentials(); len(creds) != 1 {

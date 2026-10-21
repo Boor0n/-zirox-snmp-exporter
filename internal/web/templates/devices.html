@@ -1,27 +1,27 @@
 {{define "content"}}
 <div class="bar">
-  <h1>Устройства <span class="muted">{{.Total}}</span></h1>
-  <a class="btn primary" href="/devices/new">+ Добавить устройство</a>
+  <h1>Devices <span class="muted">{{.Total}}</span></h1>
+  <a class="btn primary" href="/devices/new">+ Add device</a>
 </div>
 <div class="stats">
-  <a href="/?status=ok" class="stat ok">Опрос OK: {{index .Stats "ok"}}</a>
-  <a href="/?status=failing" class="stat bad">Ошибки: {{index .Stats "failing"}}</a>
-  <a href="/?status=discovering" class="stat run">Полный опрос: {{index .Stats "discovering"}}</a>
-  <a href="/?status=pending" class="stat">Ожидают: {{index .Stats "pending"}}</a>
-  <a href="/?status=disabled" class="stat">Выключены: {{index .Stats "disabled"}}</a>
+  <a href="/?status=ok" class="stat ok">Polling OK: {{index .Stats "ok"}}</a>
+  <a href="/?status=failing" class="stat bad">Errors: {{index .Stats "failing"}}</a>
+  <a href="/?status=discovering" class="stat run">Discovering: {{index .Stats "discovering"}}</a>
+  <a href="/?status=pending" class="stat">Pending: {{index .Stats "pending"}}</a>
+  <a href="/?status=disabled" class="stat">Disabled: {{index .Stats "disabled"}}</a>
 </div>
 <form class="filters" method="get" action="/">
-  <input name="q" value="{{.Q}}" placeholder="Поиск: имя, IP, sysName, группа">
-  <select name="group"><option value="">Все группы</option>{{range .Groups}}<option {{if eq . $.Group}}selected{{end}}>{{.}}</option>{{end}}</select>
+  <input name="q" value="{{.Q}}" placeholder="Search: name, IP, sysName, group">
+  <select name="group"><option value="">All groups</option>{{range .Groups}}<option {{if eq . $.Group}}selected{{end}}>{{.}}</option>{{end}}</select>
   <input type="hidden" name="status" value="{{.Status}}">
-  <button>Найти</button>{{if or .Q .Group .Status}} <a href="/">Сбросить</a>{{end}}
+  <button>Search</button>{{if or .Q .Group .Status}} <a href="/">Reset</a>{{end}}
 </form>
 {{if .AnyDiscovering}}<div data-autoreload="5"></div>{{end}}
 <form method="post" action="/devices/bulk" id="bulk">
 <table class="list">
   <thead><tr>
     <th><input type="checkbox" data-check-all="ids"></th>
-    <th>Устройство</th><th>Группа</th><th>Статус</th><th>Объекты</th><th>Интервал</th><th>Последний опрос</th><th></th>
+    <th>Device</th><th>Group</th><th>Status</th><th>Objects</th><th>Interval</th><th>Last poll</th><th></th>
   </tr></thead>
   <tbody>
   {{range .Rows}}
@@ -30,32 +30,32 @@
     <td><a href="/devices/{{.ID}}"><b>{{.Name}}</b></a><div class="muted small">{{.Address}}{{if ne .Port 161}}:{{.Port}}{{end}}{{with .SysName}} · {{.}}{{end}}</div></td>
     <td>{{.Group}}</td>
     <td>
-      {{if not .Enabled}}<span class="badge">выключено</span>
-      {{else if .Discovering}}<span class="badge run">полный опрос…</span>
-      {{else if .LastDiscovery.IsZero}}{{if .DiscoveryError}}<span class="badge bad" title="{{.DiscoveryError}}">не отвечает</span>{{else}}<span class="badge">ожидает</span>{{end}}
-      {{else if not .Snap}}<span class="badge">ожидает опроса</span>
+      {{if not .Enabled}}<span class="badge">disabled</span>
+      {{else if .Discovering}}<span class="badge run">discovering…</span>
+      {{else if .LastDiscovery.IsZero}}{{if .DiscoveryError}}<span class="badge bad" title="{{.DiscoveryError}}">not responding</span>{{else}}<span class="badge">pending</span>{{end}}
+      {{else if not .Snap}}<span class="badge">waiting for poll</span>
       {{else if .Snap.OK}}<span class="badge ok">OK</span>
-      {{else}}<span class="badge bad" title="{{.Snap.Err}}">ошибка ×{{.Snap.Fails}}</span>{{end}}
+      {{else}}<span class="badge bad" title="{{.Snap.Err}}">error ×{{.Snap.Fails}}</span>{{end}}
     </td>
     <td>{{.Selected}} / {{.Total}}</td>
-    <td title="{{.Eff.Source}}">{{secs .Eff.Interval}} с</td>
+    <td title="{{.Eff.Source}}">{{secs .Eff.Interval}} s</td>
     <td>{{if .Snap}}{{ago .Snap.At}} <span class="muted small">{{dur .Snap.Duration}}</span>{{else}}—{{end}}</td>
     <td class="actions">
-      <button class="link" formaction="/devices/{{.ID}}/refresh?back=list" name="back" value="list" title="Полный опрос: найти новые порты и датчики">Refresh</button>
-      <a href="/devices/{{.ID}}/edit">Изменить</a>
+      <button class="link" formaction="/devices/{{.ID}}/refresh?back=list" name="back" value="list" title="Full discovery: find new ports and sensors">Refresh</button>
+      <a href="/devices/{{.ID}}/edit">Edit</a>
     </td>
   </tr>
   {{else}}
-  <tr><td colspan="8" class="empty">Устройств пока нет. <a href="/devices/new">Добавьте первое</a> или <a href="/import">импортируйте CSV</a>.</td></tr>
+  <tr><td colspan="8" class="empty">No devices yet. <a href="/devices/new">Add the first one</a> or <a href="/import">import a CSV</a>.</td></tr>
   {{end}}
   </tbody>
 </table>
 <div class="bulk">
-  С выбранными:
+  Selected:
   <button name="action" value="refresh">Refresh</button>
-  <button name="action" value="enable">Включить</button>
-  <button name="action" value="disable">Выключить</button>
-  <button name="action" value="delete" class="danger" data-confirm="Удалить выбранные устройства?">Удалить</button>
+  <button name="action" value="enable">Enable</button>
+  <button name="action" value="disable">Disable</button>
+  <button name="action" value="delete" class="danger" data-confirm="Delete the selected devices?">Delete</button>
 </div>
 </form>
 {{end}}

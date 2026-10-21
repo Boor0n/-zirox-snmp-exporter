@@ -1,31 +1,31 @@
 {{define "content"}}
-<h1>Подключение к Prometheus</h1>
-<p>Prometheus сам узнаёт список устройств и интервал каждого через HTTP Service Discovery. После добавления устройства в веб-интерфейсе ничего в Prometheus менять не нужно. Prometheus никогда не обращается к устройствам: он читает последние значения из памяти экспортера.</p>
+<h1>Connecting Prometheus</h1>
+<p>Prometheus learns the device list and each device's interval through HTTP Service Discovery. After you add a device here, nothing needs to change in Prometheus. Prometheus never talks to the devices: it reads the latest values from the exporter's memory.</p>
 <h2>prometheus.yml</h2>
 <pre class="code">scrape_configs:
   - job_name: zirox-snmp
     http_sd_configs:
       - url: {{.Base}}/sd
         refresh_interval: 60s</pre>
-<p class="muted small">Если задан ZIROX_SCRAPE_TOKEN, добавьте <code>authorization: {credentials: "&lt;token&gt;"}</code> и в <code>http_sd_configs</code>, и в саму задачу.</p>
-<p>Каждое устройство становится отдельной целью с метками <code>instance</code>, <code>device</code>, <code>group</code>, <code>address</code>, <code>sysName</code>. Интервал сбора (<code>__scrape_interval__</code>) равен интервалу опроса устройства.</p>
-<h2>Альтернатива: одна цель со всеми устройствами</h2>
+<p class="muted small">If ZIROX_SCRAPE_TOKEN is set, add <code>authorization: {credentials: "&lt;token&gt;"}</code> both to <code>http_sd_configs</code> and to the job itself.</p>
+<p>Each device becomes its own target with the labels <code>instance</code>, <code>device</code>, <code>group</code>, <code>address</code>, <code>sysName</code>. The scrape interval (<code>__scrape_interval__</code>) equals the device's poll interval.</p>
+<h2>Alternative: one target with all devices</h2>
 <pre class="code">  - job_name: zirox-snmp-all
     scrape_interval: 60s
     metrics_path: /metrics/all
     static_configs:
       - targets: ['{{.Host}}']</pre>
-<h2>Эндпоинты</h2>
+<h2>Endpoints</h2>
 <table class="list">
-<tr><td><a href="/sd" target="_blank">/sd</a></td><td>список целей для HTTP SD (JSON)</td></tr>
-<tr><td><code>/probe?target=&lt;id|имя|IP&gt;</code></td><td>метрики одного устройства</td></tr>
-<tr><td><a href="/metrics/all" target="_blank">/metrics/all</a></td><td>все устройства одним ответом, с метками device и group</td></tr>
-<tr><td><a href="/metrics" target="_blank">/metrics</a></td><td>состояние самого экспортера</td></tr>
+<tr><td><a href="/sd" target="_blank">/sd</a></td><td>target list for HTTP SD (JSON)</td></tr>
+<tr><td><code>/probe?target=&lt;id|name|IP&gt;</code></td><td>metrics of one device</td></tr>
+<tr><td><a href="/metrics/all" target="_blank">/metrics/all</a></td><td>all devices in one response, with device and group labels</td></tr>
+<tr><td><a href="/metrics" target="_blank">/metrics</a></td><td>health of the exporter itself</td></tr>
 </table>
-<h2>Примеры запросов для Grafana</h2>
-<pre class="code">rate(ifHCInOctets{device="core-nx-01"}[5m]) * 8          # входящий трафик, бит/с
-rate(ifInErrors[5m]) > 0                                   # порты с ошибками
-zirox_cpu_utilization_percent{window="1m"}                 # загрузка CPU
-zirox_temperature_celsius                                  # температура
-zirox_poll_success == 0                                    # устройства, которые не отвечают</pre>
+<h2>Example Grafana queries</h2>
+<pre class="code">rate(ifHCInOctets{device="core-nx-01"}[5m]) * 8          # inbound traffic, bit/s
+rate(ifInErrors[5m]) > 0                                   # ports with errors
+zirox_cpu_utilization_percent{window="1m"}                 # CPU load
+zirox_temperature_celsius                                  # temperature
+zirox_poll_success == 0                                    # devices that do not answer</pre>
 {{end}}

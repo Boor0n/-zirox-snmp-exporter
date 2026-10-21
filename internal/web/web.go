@@ -106,24 +106,24 @@ func (s *Server) Register(mux *http.ServeMux) {
 var funcs = template.FuncMap{
 	"ago": func(t time.Time) string {
 		if t.IsZero() {
-			return "никогда"
+			return "never"
 		}
 		d := time.Since(t).Round(time.Second)
 		switch {
 		case d < time.Minute:
-			return fmt.Sprintf("%d с назад", int(d.Seconds()))
+			return fmt.Sprintf("%d s ago", int(d.Seconds()))
 		case d < time.Hour:
-			return fmt.Sprintf("%d мин назад", int(d.Minutes()))
+			return fmt.Sprintf("%d min ago", int(d.Minutes()))
 		case d < 48*time.Hour:
-			return fmt.Sprintf("%d ч назад", int(d.Hours()))
+			return fmt.Sprintf("%d h ago", int(d.Hours()))
 		}
 		return t.Format("02.01.2006 15:04")
 	},
 	"dur": func(d time.Duration) string {
 		if d >= time.Second {
-			return fmt.Sprintf("%.1f с", d.Seconds())
+			return fmt.Sprintf("%.1f s", d.Seconds())
 		}
-		return fmt.Sprintf("%d мс", d.Milliseconds())
+		return fmt.Sprintf("%d ms", d.Milliseconds())
 	},
 	"secs":  func(d time.Duration) int { return int(d.Seconds()) },
 	"list":  func(v ...string) []string { return v },
@@ -132,7 +132,7 @@ var funcs = template.FuncMap{
 		if n, ok := ifTypeNames[t]; ok {
 			return n
 		}
-		return "тип " + strconv.Itoa(t)
+		return "type " + strconv.Itoa(t)
 	},
 	"physical": func(t int) bool { return physicalTypes[t] },
 	"oper": func(s int) string {
@@ -165,9 +165,9 @@ func speedText(mbps int64) string {
 	case mbps <= 0:
 		return ""
 	case mbps >= 1000 && mbps%1000 == 0:
-		return fmt.Sprintf("%d Гбит/с", mbps/1000)
+		return fmt.Sprintf("%d Gbit/s", mbps/1000)
 	}
-	return fmt.Sprintf("%d Мбит/с", mbps)
+	return fmt.Sprintf("%d Mbit/s", mbps)
 }
 
 func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, data map[string]any) {
@@ -399,20 +399,20 @@ func validateCred(c store.Credential) error {
 	switch c.Version {
 	case "1", "2c":
 		if c.Community == "" {
-			return errors.New("укажите community")
+			return errors.New("enter a community")
 		}
 	case "3":
 		if c.V3User == "" {
-			return errors.New("укажите пользователя SNMPv3")
+			return errors.New("enter an SNMPv3 user")
 		}
 		if c.V3Level != "noAuthNoPriv" && len(c.V3AuthPass) < 8 {
-			return errors.New("пароль аутентификации SNMPv3 должен быть не короче 8 символов")
+			return errors.New("SNMPv3 auth password must be at least 8 characters")
 		}
 		if c.V3Level == "authPriv" && len(c.V3PrivPass) < 8 {
-			return errors.New("пароль шифрования SNMPv3 должен быть не короче 8 символов")
+			return errors.New("SNMPv3 privacy password must be at least 8 characters")
 		}
 	default:
-		return errors.New("выберите версию SNMP")
+		return errors.New("choose an SNMP version")
 	}
 	return nil
 }
@@ -424,7 +424,7 @@ func (s *Server) resolveCredential(r *http.Request, devName string) (store.Crede
 		id, _ := strconv.ParseInt(r.FormValue("credential_id"), 10, 64)
 		c, err := s.st.Credential(id)
 		if err != nil {
-			return c, errors.New("выберите учётные данные")
+			return c, errors.New("choose credentials")
 		}
 		return c, nil
 	}
@@ -493,7 +493,7 @@ func (s *Server) rerenderDeviceForm(w http.ResponseWriter, r *http.Request, d st
 func (s *Server) deviceSave(w http.ResponseWriter, r *http.Request) {
 	d := deviceFromForm(r)
 	if d.Address == "" {
-		s.rerenderDeviceForm(w, r, d, "укажите IP-адрес или DNS-имя", false)
+		s.rerenderDeviceForm(w, r, d, "enter an IP address or DNS name", false)
 		return
 	}
 	c, err := s.resolveCredential(r, d.Name)
@@ -513,7 +513,7 @@ func (s *Server) deviceSave(w http.ResponseWriter, r *http.Request) {
 	if err := s.st.SaveDevice(&d); err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "UNIQUE") {
-			msg = "устройство с таким именем уже есть"
+			msg = "a device with this name already exists"
 		}
 		s.rerenderDeviceForm(w, r, d, msg, false)
 		return
@@ -521,11 +521,11 @@ func (s *Server) deviceSave(w http.ResponseWriter, r *http.Request) {
 	// A new device, or one whose address or credentials changed, gets a full discovery.
 	if isNew || before.Address != d.Address || before.Port != d.Port || before.CredentialID != d.CredentialID || before.LastDiscovery.IsZero() {
 		s.en.Refresh(d.ID)
-		redirect(w, r, fmt.Sprintf("/devices/%d", d.ID), "Устройство сохранено, идёт полный опрос")
+		redirect(w, r, fmt.Sprintf("/devices/%d", d.ID), "Device saved, full discovery running")
 		return
 	}
 	s.en.Reload(d.ID)
-	redirect(w, r, fmt.Sprintf("/devices/%d", d.ID), "Устройство сохранено")
+	redirect(w, r, fmt.Sprintf("/devices/%d", d.ID), "Device saved")
 }
 
 func (s *Server) deviceTest(w http.ResponseWriter, r *http.Request) {
@@ -538,10 +538,10 @@ func (s *Server) deviceTest(w http.ResponseWriter, r *http.Request) {
 	eff := s.en.Resolve(d)
 	info, err := s.en.Test(snmpx.Target{Address: d.Address, Port: d.Port, Cred: c, Timeout: max(eff.Timeout, 3*time.Second), Retries: 1})
 	if err != nil {
-		s.rerenderDeviceForm(w, r, d, "Нет ответа: "+err.Error(), false)
+		s.rerenderDeviceForm(w, r, d, "No response: "+err.Error(), false)
 		return
 	}
-	s.rerenderDeviceForm(w, r, d, fmt.Sprintf("Устройство ответило: %s — %s", info.SysName, firstLine(info.SysDescr)), true)
+	s.rerenderDeviceForm(w, r, d, fmt.Sprintf("Device answered: %s — %s", info.SysName, firstLine(info.SysDescr)), true)
 }
 
 func (s *Server) resolveCredentialNoSave(r *http.Request) (store.Credential, error) {
@@ -552,7 +552,7 @@ func (s *Server) resolveCredentialNoSave(r *http.Request) (store.Credential, err
 	id, _ := strconv.ParseInt(r.FormValue("credential_id"), 10, 64)
 	c, err := s.st.Credential(id)
 	if err != nil {
-		return c, errors.New("выберите учётные данные")
+		return c, errors.New("choose credentials")
 	}
 	return s.en.DecryptCredential(c)
 }
@@ -603,7 +603,7 @@ func (s *Server) deviceCard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var groups []ObjectGroup
-	for _, c := range append(snmpx.Categories, "Другое") {
+	for _, c := range append(snmpx.Categories, "Other") {
 		if g, ok := byCat[c]; ok {
 			groups = append(groups, *g)
 		}
@@ -637,10 +637,10 @@ func (s *Server) deviceRefresh(w http.ResponseWriter, r *http.Request) {
 		back = "/"
 	}
 	if s.en.Refresh(id) {
-		redirect(w, r, back, "Полный опрос запущен")
+		redirect(w, r, back, "Full discovery started")
 		return
 	}
-	redirect(w, r, back, "Опрос уже идёт")
+	redirect(w, r, back, "Discovery is already running")
 }
 
 func (s *Server) deviceToggle(w http.ResponseWriter, r *http.Request) {
@@ -667,7 +667,7 @@ func (s *Server) deviceDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.en.Reload(id)
-	redirect(w, r, "/", "Устройство удалено")
+	redirect(w, r, "/", "Device deleted")
 }
 
 func (s *Server) deviceSelection(w http.ResponseWriter, r *http.Request) {
@@ -687,7 +687,7 @@ func (s *Server) deviceSelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.en.Reload(id)
-	redirect(w, r, fmt.Sprintf("/devices/%d", id), fmt.Sprintf("Применено: опрашивается %d объектов", len(sel)))
+	redirect(w, r, fmt.Sprintf("/devices/%d", id), fmt.Sprintf("Applied: polling %d objects", len(sel)))
 }
 
 func (s *Server) deviceBulk(w http.ResponseWriter, r *http.Request) {
@@ -702,7 +702,7 @@ func (s *Server) deviceBulk(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(ids) == 0 {
-		redirect(w, r, "/", "Ничего не выбрано")
+		redirect(w, r, "/", "Nothing selected")
 		return
 	}
 	action := r.FormValue("action")
@@ -729,8 +729,8 @@ func (s *Server) deviceBulk(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	names := map[string]string{"refresh": "Полный опрос запущен", "enable": "Включено", "disable": "Выключено", "delete": "Удалено", "profile": "Профиль назначен"}
-	redirect(w, r, "/", fmt.Sprintf("%s: %d устройств", names[action], len(ids)))
+	names := map[string]string{"refresh": "Full discovery started", "enable": "Enabled", "disable": "Disabled", "delete": "Deleted", "profile": "Profile assigned"}
+	redirect(w, r, "/", fmt.Sprintf("%s: %d devices", names[action], len(ids)))
 }
 
 // ---- credentials ----
@@ -766,7 +766,7 @@ func (s *Server) credentialSave(w http.ResponseWriter, r *http.Request) {
 	c := credFromForm(r)
 	c.ID = pathID(r)
 	if c.Name == "" {
-		s.render(w, r, "credential_form", map[string]any{"Cred": c, "Error": "укажите имя"})
+		s.render(w, r, "credential_form", map[string]any{"Cred": c, "Error": "enter a name"})
 		return
 	}
 	if c.ID != 0 {
@@ -806,7 +806,7 @@ func (s *Server) credentialSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.en.ReloadAll()
-	redirect(w, r, "/credentials", "Учётные данные сохранены")
+	redirect(w, r, "/credentials", "Credentials saved")
 }
 
 func (s *Server) credentialDelete(w http.ResponseWriter, r *http.Request) {
@@ -814,7 +814,7 @@ func (s *Server) credentialDelete(w http.ResponseWriter, r *http.Request) {
 		redirectErr(w, r, "/credentials", err)
 		return
 	}
-	redirect(w, r, "/credentials", "Удалено")
+	redirect(w, r, "/credentials", "Deleted")
 }
 
 // ---- poll profiles ----
@@ -849,7 +849,7 @@ func (s *Server) profileSave(w http.ResponseWriter, r *http.Request) {
 	}
 	p.ID, _ = strconv.ParseInt(r.FormValue("id"), 10, 64)
 	if p.Name == "" {
-		redirectErr(w, r, "/profiles", errors.New("укажите имя профиля"))
+		redirectErr(w, r, "/profiles", errors.New("enter a profile name"))
 		return
 	}
 	if err := s.st.SaveProfile(&p); err != nil {
@@ -857,7 +857,7 @@ func (s *Server) profileSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.en.ReloadAll()
-	redirect(w, r, "/profiles", "Профиль сохранён и применён")
+	redirect(w, r, "/profiles", "Profile saved and applied")
 }
 
 func (s *Server) profileDelete(w http.ResponseWriter, r *http.Request) {
@@ -866,7 +866,7 @@ func (s *Server) profileDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.en.ReloadAll()
-	redirect(w, r, "/profiles", "Профиль удалён, его устройства используют глобальные настройки")
+	redirect(w, r, "/profiles", "Profile deleted; its devices now use the global settings")
 }
 
 // ---- settings ----
@@ -887,18 +887,18 @@ func (s *Server) settingsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.en.ReloadAll()
-	redirect(w, r, "/settings", "Глобальные настройки применены")
+	redirect(w, r, "/settings", "Global settings applied")
 }
 
 func (s *Server) passwordSave(w http.ResponseWriter, r *http.Request) {
 	user := s.sessionUser(r)
 	if !s.checkPassword(user, r.FormValue("current")) {
-		redirectErr(w, r, "/settings", errors.New("текущий пароль неверный"))
+		redirectErr(w, r, "/settings", errors.New("current password is wrong"))
 		return
 	}
 	pw := r.FormValue("new")
 	if len(pw) < 8 || pw != r.FormValue("confirm") {
-		redirectErr(w, r, "/settings", errors.New("новый пароль: минимум 8 символов, оба поля должны совпадать"))
+		redirectErr(w, r, "/settings", errors.New("new password: at least 8 characters, both fields must match"))
 		return
 	}
 	if _, err := EnsureAdmin(s.st, user, pw, true); err != nil {
@@ -906,7 +906,7 @@ func (s *Server) passwordSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSession(w, user)
-	redirect(w, r, "/settings", "Пароль изменён")
+	redirect(w, r, "/settings", "Password changed")
 }
 
 // ---- CSV import ----
@@ -962,17 +962,17 @@ func (s *Server) ImportCSV(src io.Reader, defaultCred, defaultProfile string) ([
 	cr.Comment = '#'
 	head, err := cr.Read()
 	if err != nil {
-		return nil, errors.New("пустой CSV")
+		return nil, errors.New("empty CSV")
 	}
 	if len(head) == 1 && strings.Contains(head[0], ";") {
-		return nil, errors.New("используйте запятую как разделитель")
+		return nil, errors.New("use a comma as the separator")
 	}
 	col := map[string]int{}
 	for i, h := range head {
 		col[strings.ToLower(strings.TrimSpace(strings.TrimPrefix(h, "\ufeff")))] = i
 	}
 	if _, ok := col["address"]; !ok {
-		return nil, errors.New("нет колонки address")
+		return nil, errors.New("no address column")
 	}
 	get := func(rec []string, k string) string {
 		if i, ok := col[k]; ok && i < len(rec) {
@@ -999,7 +999,7 @@ func (s *Server) ImportCSV(src io.Reader, defaultCred, defaultProfile string) ([
 		}
 		res := ImportResult{Line: line, Name: d.Name}
 		if d.Address == "" {
-			res.Msg = "нет адреса"
+			res.Msg = "no address"
 			out = append(out, res)
 			continue
 		}
@@ -1013,7 +1013,7 @@ func (s *Server) ImportCSV(src io.Reader, defaultCred, defaultProfile string) ([
 		if p := get(rec, "profile"); p != "" {
 			prof, err := s.st.ProfileByName(p)
 			if err != nil {
-				res.Msg = "нет профиля «" + p + "»"
+				res.Msg = "no profile \"" + p + "\""
 				out = append(out, res)
 				continue
 			}
@@ -1024,13 +1024,13 @@ func (s *Server) ImportCSV(src io.Reader, defaultCred, defaultProfile string) ([
 		if err := s.st.SaveDevice(&d); err != nil {
 			res.Msg = err.Error()
 			if strings.Contains(res.Msg, "UNIQUE") {
-				res.Msg = "уже существует"
+				res.Msg = "already exists"
 			}
 			out = append(out, res)
 			continue
 		}
 		s.en.Refresh(d.ID)
-		res.OK, res.Msg = true, "добавлено, идёт полный опрос"
+		res.OK, res.Msg = true, "added, full discovery running"
 		out = append(out, res)
 	}
 	return out, nil
@@ -1041,7 +1041,7 @@ func (s *Server) importCredential(name, version, community, def, hint string) (s
 	case name != "":
 		c, err := s.st.CredentialByName(name)
 		if err != nil {
-			return c, errors.New("нет учётных данных «" + name + "»")
+			return c, errors.New("no credentials \"" + name + "\"")
 		}
 		return c, nil
 	case community != "":
@@ -1049,14 +1049,14 @@ func (s *Server) importCredential(name, version, community, def, hint string) (s
 			version = "2c"
 		}
 		if version != "1" && version != "2c" {
-			return store.Credential{}, errors.New("в CSV можно задать community только для v1/v2c; для v3 укажите credential")
+			return store.Credential{}, errors.New("CSV can set a community only for v1/v2c; for v3 use the credential column")
 		}
 		return s.findOrCreateCredential(store.Credential{Version: version, Community: community}, hint)
 	case def != "":
 		id, _ := strconv.ParseInt(def, 10, 64)
 		return s.st.Credential(id)
 	}
-	return store.Credential{}, errors.New("не указаны учётные данные")
+	return store.Credential{}, errors.New("no credentials given")
 }
 
 // ---- Prometheus help ----

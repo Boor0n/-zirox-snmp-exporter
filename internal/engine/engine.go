@@ -37,7 +37,7 @@ type Effective struct {
 	Timeout      time.Duration
 	Retries      int
 	AutoSelectUp bool
-	Source       string // "устройство", profile name or "глобальный"
+	Source       string // "device", profile name or "global"
 }
 
 // Options configures the engine.
@@ -115,7 +115,7 @@ func (e *Engine) Resolve(d store.Device) Effective {
 	eff := Effective{
 		Interval: time.Duration(g.IntervalSec) * time.Second,
 		Timeout:  time.Duration(g.TimeoutSec) * time.Second,
-		Retries:  g.Retries, AutoSelectUp: g.AutoSelectUp, Source: "глобальный",
+		Retries:  g.Retries, AutoSelectUp: g.AutoSelectUp, Source: "global",
 	}
 	if d.ProfileID != 0 {
 		if p, err := e.st.Profile(d.ProfileID); err == nil {
@@ -123,12 +123,12 @@ func (e *Engine) Resolve(d store.Device) Effective {
 			eff.Timeout = time.Duration(p.TimeoutSec) * time.Second
 			eff.Retries = p.Retries
 			eff.AutoSelectUp = p.AutoSelectUp
-			eff.Source = "профиль «" + p.Name + "»"
+			eff.Source = "profile \"" + p.Name + "\""
 		}
 	}
 	if d.IntervalSec > 0 {
 		eff.Interval = time.Duration(max(d.IntervalSec, store.MinIntervalSec)) * time.Second
-		eff.Source = "устройство"
+		eff.Source = "device"
 	}
 	// A poll must finish well within its interval.
 	if limit := eff.Interval * 8 / 10; eff.Timeout*time.Duration(eff.Retries+1) > limit {
@@ -142,7 +142,7 @@ func (e *Engine) Resolve(d store.Device) Effective {
 func (e *Engine) Target(d store.Device, eff Effective) (snmpx.Target, error) {
 	c, err := e.st.Credential(d.CredentialID)
 	if err != nil {
-		return snmpx.Target{}, fmt.Errorf("учётные данные: %w", err)
+		return snmpx.Target{}, fmt.Errorf("credentials: %w", err)
 	}
 	if c, err = e.DecryptCredential(c); err != nil {
 		return snmpx.Target{}, err
@@ -442,7 +442,7 @@ func (e *Engine) Test(t snmpx.Target) (snmpx.SystemInfo, error) {
 		}
 	}
 	if len(pdus) == 0 {
-		return info, errors.New("нет ответа на sysDescr")
+		return info, errors.New("no answer to sysDescr")
 	}
 	return info, nil
 }

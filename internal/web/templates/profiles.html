@@ -1,29 +1,29 @@
 {{define "content"}}
-<h1>Профили опроса</h1>
-<p class="muted">Профиль задаёт, как часто опрашивать отмеченные порты и датчики. Устройство без профиля использует глобальные настройки ({{.Global.IntervalSec}} с, <a href="/settings">изменить</a>). Свой интервал в карточке устройства важнее профиля. Изменения применяются сразу, без перезапуска.</p>
+<h1>Poll profiles</h1>
+<p class="muted">A profile sets how often the selected ports and sensors are polled. Devices without a profile use the global settings ({{.Global.IntervalSec}} s, <a href="/settings">change</a>). A device's own interval overrides its profile. Changes apply immediately, no restart needed.</p>
 <table class="list">
-  <thead><tr><th>Имя</th><th>Интервал</th><th>Таймаут</th><th>Повторы</th><th>Автоотметка новых up-портов</th><th>Устройств</th><th></th></tr></thead>
+  <thead><tr><th>Name</th><th>Interval</th><th>Timeout</th><th>Retries</th><th>Auto-select new up ports</th><th>Devices</th><th></th></tr></thead>
   <tbody>
   {{range .Profiles}}
   <tr>
-    <td><b>{{.Name}}</b></td><td>{{.IntervalSec}} с</td><td>{{.TimeoutSec}} с</td><td>{{.Retries}}</td>
-    <td>{{if .AutoSelectUp}}да{{else}}нет{{end}}</td><td>{{index $.Uses .ID}}</td>
+    <td><b>{{.Name}}</b></td><td>{{.IntervalSec}} s</td><td>{{.TimeoutSec}} s</td><td>{{.Retries}}</td>
+    <td>{{if .AutoSelectUp}}yes{{else}}no{{end}}</td><td>{{index $.Uses .ID}}</td>
     <td class="actions">
-      <a href="/profiles?edit={{.ID}}">Изменить</a>
-      <form method="post" action="/profiles/{{.ID}}/delete" class="inline"><button class="link danger" data-confirm="Удалить профиль {{.Name}}? Его устройства перейдут на глобальные настройки.">Удалить</button></form>
+      <a href="/profiles?edit={{.ID}}">Edit</a>
+      <form method="post" action="/profiles/{{.ID}}/delete" class="inline"><button class="link danger" data-confirm="Delete profile {{.Name}}? Its devices will switch to the global settings.">Delete</button></form>
     </td>
   </tr>
   {{end}}
   </tbody>
 </table>
-<h2>{{if .Edit.ID}}Изменить «{{.Edit.Name}}»{{else}}Новый профиль{{end}}</h2>
+<h2>{{if .Edit.ID}}Edit "{{.Edit.Name}}"{{else}}New profile{{end}}</h2>
 <form method="post" action="/profiles" class="card form inline-form">
   <input type="hidden" name="id" value="{{.Edit.ID}}">
-  <label>Имя <input name="name" value="{{.Edit.Name}}" required></label>
-  <label>Интервал, с <input name="interval_sec" type="number" min="{{.Min}}" value="{{.Edit.IntervalSec}}" required></label>
-  <label>Таймаут, с <input name="timeout_sec" type="number" min="1" value="{{.Edit.TimeoutSec}}"></label>
-  <label>Повторы <input name="retries" type="number" min="0" max="5" value="{{.Edit.Retries}}"></label>
-  <label class="check"><input type="checkbox" name="auto_select_up" {{if .Edit.AutoSelectUp}}checked{{end}}> Автоматически отмечать новые порты в состоянии up</label>
-  <div class="buttons"><button class="primary">Сохранить и применить</button>{{if .Edit.ID}} <a href="/profiles">Отмена</a>{{end}}</div>
+  <label>Name <input name="name" value="{{.Edit.Name}}" required></label>
+  <label>Interval, s <input name="interval_sec" type="number" min="{{.Min}}" value="{{.Edit.IntervalSec}}" required></label>
+  <label>Timeout, s <input name="timeout_sec" type="number" min="1" value="{{.Edit.TimeoutSec}}"></label>
+  <label>Retries <input name="retries" type="number" min="0" max="5" value="{{.Edit.Retries}}"></label>
+  <label class="check"><input type="checkbox" name="auto_select_up" {{if .Edit.AutoSelectUp}}checked{{end}}> Automatically select new ports that are up</label>
+  <div class="buttons"><button class="primary">Save and apply</button>{{if .Edit.ID}} <a href="/profiles">Cancel</a>{{end}}</div>
 </form>
 {{end}}

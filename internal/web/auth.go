@@ -121,7 +121,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.checkPassword(user, pass) {
 		time.Sleep(500 * time.Millisecond)
-		s.render(w, r, "login", map[string]any{"Next": next, "Error": "Неверный логин или пароль"})
+		s.render(w, r, "login", map[string]any{"Next": next, "Error": "Wrong username or password"})
 		return
 	}
 	s.setSession(w, user)

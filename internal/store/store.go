@@ -313,7 +313,7 @@ func (s *Store) DeleteCredential(id int64) error {
 		return err
 	}
 	if n > 0 {
-		return fmt.Errorf("используется на %d устройствах", n)
+		return fmt.Errorf("used by %d devices", n)
 	}
 	_, err := s.db.Exec(`DELETE FROM credentials WHERE id=?`, id)
 	return err
@@ -391,9 +391,9 @@ func (s *Store) EnsureDefaultProfiles() error {
 		return err
 	}
 	for _, p := range []PollProfile{
-		{Name: "Быстрый (6 с)", IntervalSec: 6, TimeoutSec: 3, Retries: 0, AutoSelectUp: true},
-		{Name: "Обычный (60 с)", IntervalSec: 60, TimeoutSec: 5, Retries: 1, AutoSelectUp: true},
-		{Name: "Редкий (300 с)", IntervalSec: 300, TimeoutSec: 10, Retries: 2, AutoSelectUp: true},
+		{Name: "Fast (6 s)", IntervalSec: 6, TimeoutSec: 3, Retries: 0, AutoSelectUp: true},
+		{Name: "Normal (60 s)", IntervalSec: 60, TimeoutSec: 5, Retries: 1, AutoSelectUp: true},
+		{Name: "Slow (300 s)", IntervalSec: 300, TimeoutSec: 10, Retries: 2, AutoSelectUp: true},
 	} {
 		if err := s.SaveProfile(&p); err != nil {
 			return err
