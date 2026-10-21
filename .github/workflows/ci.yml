@@ -26,3 +26,10 @@ jobs:
         env:
           ZIROX_TEST_SNMP: 127.0.0.1:1161
       - run: docker build -t zirox-snmp-exporter:ci .
+      - name: Check Prometheus alert rules and Grafana dashboard
+        run: |
+          curl -sSfL https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz \
+            | tar -xz --strip-components=1 -C /tmp prometheus-3.5.0.linux-amd64/promtool
+          /tmp/promtool check rules deploy/alerts.yml
+          /tmp/promtool test rules deploy/alerts_test.yml
+          jq -e '.panels | length > 0' deploy/grafana-dashboard.json

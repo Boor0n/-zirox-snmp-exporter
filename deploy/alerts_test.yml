@@ -1,0 +1,61 @@
+# Unit tests for alerts.yml: promtool test rules deploy/alerts_test.yml
+rule_files:
+  - alerts.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'zirox_poll_success{device="sw1",address="10.0.0.1"}'
+        values: '1 0x10'
+      - series: 'ifOperStatus{device="sw1",ifName="Eth1/1",ifAlias="uplink",ifIndex="1"}'
+        values: '1 2x5'
+      - series: 'ifAdminStatus{device="sw1",ifName="Eth1/1",ifAlias="uplink",ifIndex="1"}'
+        values: '1x6'
+      - series: 'ifOperStatus{device="sw1",ifName="Eth1/2",ifAlias="",ifIndex="2"}'
+        values: '2x6'
+      - series: 'ifAdminStatus{device="sw1",ifName="Eth1/2",ifAlias="",ifIndex="2"}'
+        values: '2x6'
+      - series: 'zirox_envmon_psu_state{device="sw1",index="1",name="PS1"}'
+        values: '3x5'
+      - series: 'zirox_envmon_psu_state{device="sw1",index="2",name="PS2"}'
+        values: '5x5'
+      - series: 'zirox_temperature_celsius{device="sw1",index="7",name="Inlet"}'
+        values: '40 75x10'
+      - series: 'ifHCInOctets{device="sw1",ifName="Eth1/3",ifAlias="",ifIndex="3"}'
+        values: '0+7500000000x30'
+      - series: 'ifHighSpeed{device="sw1",ifName="Eth1/3",ifAlias="",ifIndex="3"}'
+        values: '1000x30'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ZiroxDeviceUnreachable
+        exp_alerts:
+          - exp_labels: {severity: critical, device: sw1, address: 10.0.0.1}
+            exp_annotations:
+              summary: "sw1 (10.0.0.1) does not answer SNMP"
+              description: "The last SNMP polls of sw1 failed for 5 minutes. Check reachability, ACLs and credentials."
+      - eval_time: 4m
+        alertname: ZiroxInterfaceDown
+        exp_alerts:
+          - exp_labels: {severity: warning, device: sw1, ifName: Eth1/1, ifAlias: uplink, ifIndex: "1"}
+            exp_annotations:
+              summary: "Eth1/1 on sw1 is down"
+              description: "Eth1/1 (uplink) is admin up but operationally down."
+      - eval_time: 4m
+        alertname: ZiroxHardwareProblem
+        exp_alerts:
+          - exp_labels: {severity: critical, device: sw1, index: "1", name: PS1}
+            exp_annotations:
+              summary: "PS1 on sw1 reports state 3"
+              description: "Fan, power supply or temperature sensor is not normal (2=warning, 3=critical, 4=shutdown, 6=notFunctioning)."
+      - eval_time: 8m
+        alertname: ZiroxHighTemperature
+        exp_alerts:
+          - exp_labels: {severity: warning, device: sw1, index: "7", name: Inlet}
+            exp_annotations:
+              summary: "Inlet on sw1 is 75 °C"
+      - eval_time: 25m
+        alertname: ZiroxInterfaceHighUtilization
+        exp_alerts:
+          - exp_labels: {severity: warning, device: sw1, ifName: Eth1/3, ifIndex: "3"}
+            exp_annotations:
+              summary: "Eth1/3 on sw1 above 90% of link speed"
