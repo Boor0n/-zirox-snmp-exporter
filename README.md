@@ -47,7 +47,7 @@ sudo ./install.sh
 - Удаление: `sudo ./install.sh --uninstall` (данные остаются).
 - Из исходников: `sudo deploy/install.sh` в клоне репозитория соберёт бинарник сам (нужен Go 1.26+).
 
-Новый релиз собирается автоматически при push тега: `git tag v0.2.0 && git push origin v0.2.0`.
+Новый релиз собирается автоматически при push тега (`git tag v0.2.0 && git push origin v0.2.0`) или кнопкой на GitHub: Actions → release → Run workflow, указать версию.
 
 ### Переменные окружения
 
