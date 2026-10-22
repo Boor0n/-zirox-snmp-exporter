@@ -102,6 +102,7 @@ func Discover(s Session) (SystemInfo, []store.Object, error) {
 	objs = append(objs, ifs...)
 	// Health objects are best effort: a device that lacks a MIB returns nothing.
 	objs = append(objs, discoverHealth(s)...)
+	objs = append(objs, discoverCustom(s)...)
 	return info, uniqueKeys(objs), nil
 }
 
@@ -320,6 +321,10 @@ func Merge(old, found []store.Object, autoSelect bool) []store.Object {
 			delete(prev, k)
 		} else {
 			o.Selected = autoSelect && shouldAutoSelect(o)
+			if strings.HasPrefix(o.Kind, "custom_") {
+				// Custom OIDs carry their own auto-select switch.
+				o.Selected = autoSelectCustom(o.Kind)
+			}
 			o.State = store.StateNew
 			if first {
 				o.State = store.StateActive
@@ -388,6 +393,12 @@ func asFloat(p gosnmp.SnmpPDU) float64 {
 	case string:
 		f, _ := strconv.ParseFloat(strings.TrimSpace(v), 64)
 		return f
+	}
+	switch v := p.Value.(type) {
+	case float32:
+		return float64(v)
+	case float64:
+		return v
 	}
 	f, _ := gosnmp.ToBigInt(p.Value).Float64()
 	return f

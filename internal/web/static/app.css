@@ -45,13 +45,13 @@ button:disabled { opacity: .6; cursor: default; }
 input, select, textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); max-width: 100%; }
 textarea { width: 100%; font-family: ui-monospace, monospace; }
 .form label { display: block; margin: 8px 0; }
-.form label > input:not([type=checkbox]), .form label > select { display: block; width: 100%; max-width: 420px; margin-top: 3px; }
+.form label > input:not([type=checkbox]):not([type=radio]), .form label > select { display: block; width: 100%; max-width: 420px; margin-top: 3px; }
 .form fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 12px; padding: 8px 14px 12px; }
 .form legend { font-weight: 600; padding: 0 6px; }
 .form .sub { border-left: 3px solid var(--line); padding-left: 12px; margin-top: 8px; }
 .inline-form { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: flex-end; }
 .inline-form label { margin: 4px 0; }
-.inline-form label > input:not([type=checkbox]) { width: 160px; }
+.inline-form label > input:not([type=checkbox]):not([type=radio]) { width: 160px; }
 .inline-form .buttons { margin: 4px 0; width: 100%; }
 label.check { display: inline-flex; gap: 6px; align-items: center; }
 .flash { padding: 10px 14px; border-radius: 6px; margin: 0 0 12px; }
@@ -125,3 +125,4 @@ a:focus-visible, button:focus-visible, .btn:focus-visible, input:focus-visible, 
   input[type=checkbox] { min-height: 0; width: 20px; height: 20px; }
   button.link { min-height: 0; padding: 8px 0; }
 }
+label.check.option { display: flex; align-items: baseline; margin: 6px 0; }
