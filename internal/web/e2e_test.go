@@ -350,3 +350,125 @@ func mustDevice(t *testing.T, st *store.Store, id int64) store.Device {
 	}
 	return d
 }
+
+func (e *env) api(method, path, token, body string) (int, string) {
+	e.t.Helper()
+	req, _ := http.NewRequest(method, e.srv.URL+path, strings.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	r, err := http.DefaultClient.Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer r.Body.Close()
+	b, _ := io.ReadAll(r.Body)
+	return r.StatusCode, string(b)
+}
+
+var tokenRe = regexp.MustCompile(`zx_[A-Za-z0-9_-]+`)
+
+func TestUsersRolesAndAPI(t *testing.T) {
+	e := setup(t)
+	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+
+	// The only admin cannot be demoted.
+	if _, body := e.post("/users/1", url.Values{"role": {"viewer"}}); !strings.Contains(body, "at least one administrator") {
+		t.Fatalf("last admin demoted: %s", flash(body))
+	}
+	if _, body := e.post("/users", url.Values{"name": {"olga"}, "role": {"viewer"}, "password": {"viewerpass1"}, "confirm": {"viewerpass1"}}); !strings.Contains(body, "User olga added") {
+		t.Fatalf("user not added: %s", flash(body))
+	}
+	_, page := e.post("/tokens", url.Values{"name": {"ansible"}, "role": {"admin"}})
+	adminTok := tokenRe.FindString(page)
+	_, page = e.post("/tokens", url.Values{"name": {"grafana"}, "role": {"viewer"}})
+	viewTok := tokenRe.FindString(page)
+	if adminTok == "" || viewTok == "" || adminTok == viewTok {
+		t.Fatalf("tokens not shown: %q %q", adminTok, viewTok)
+	}
+	if _, page := e.get("/users"); strings.Contains(page, adminTok) {
+		t.Fatal("token must be shown only once")
+	}
+
+	// API: auth and roles.
+	if code, _ := e.api("GET", "/api/v1/devices", "", ""); code != 401 {
+		t.Fatalf("no token: %d", code)
+	}
+	if code, _ := e.api("GET", "/api/v1/devices", "zx_wrong", ""); code != 401 {
+		t.Fatalf("bad token: %d", code)
+	}
+	if code, body := e.api("GET", "/api/v1/devices", viewTok, ""); code != 200 || strings.TrimSpace(body) != "[]" {
+		t.Fatalf("viewer list: %d %s", code, body)
+	}
+	newDev := `{"name":"sw1","address":"10.0.0.1","group":"DC1","version":"2c","community":"public","profile":"Fast (6 s)"}`
+	if code, _ := e.api("POST", "/api/v1/devices", viewTok, newDev); code != 403 {
+		t.Fatalf("viewer token wrote: %d", code)
+	}
+	code, body := e.api("POST", "/api/v1/devices", adminTok, newDev)
+	if code != 201 {
+		t.Fatalf("create: %d %s", code, body)
+	}
+	var dev struct {
+		ID      int64 `json:"id"`
+		Profile string
+		Objects []struct {
+			Key      string
+			Selected bool
+		}
+	}
+	_ = json.Unmarshal([]byte(body), &dev)
+	if dev.Profile != "Fast (6 s)" {
+		t.Fatalf("profile not set: %s", body)
+	}
+	e.waitDiscovery(dev.ID)
+	if code, body := e.api("POST", fmt.Sprintf("/api/v1/devices/%d/selection", dev.ID), adminTok, `{"select":["Ethernet1/2"],"unselect":["Ethernet1/1"]}`); code != 200 {
+		t.Fatalf("selection: %d %s", code, body)
+	}
+	if code, _ := e.api("POST", fmt.Sprintf("/api/v1/devices/%d/selection", dev.ID), adminTok, `{"select":["Ethernet9/9"]}`); code != 400 {
+		t.Fatalf("unknown object accepted: %d", code)
+	}
+	_, body = e.api("GET", fmt.Sprintf("/api/v1/devices/%d", dev.ID), viewTok, "")
+	_ = json.Unmarshal([]byte(body), &dev)
+	sel := map[string]bool{}
+	for _, o := range dev.Objects {
+		sel[o.Key] = o.Selected
+	}
+	if !sel["Ethernet1/2"] || sel["Ethernet1/1"] || !sel["Ethernet1/3"] {
+		t.Fatalf("selection = %v", sel)
+	}
+	if code, body := e.api("PATCH", fmt.Sprintf("/api/v1/devices/%d", dev.ID), adminTok, `{"group":"DC2","interval_sec":30}`); code != 200 || !strings.Contains(body, `"group": "DC2"`) || !strings.Contains(body, `"effective_interval_sec": 30`) {
+		t.Fatalf("patch: %d %s", code, body)
+	}
+	if code, _ := e.api("PATCH", fmt.Sprintf("/api/v1/devices/%d", dev.ID), adminTok, `{"bogus":1}`); code != 400 {
+		t.Fatalf("unknown field accepted: %d", code)
+	}
+
+	// Read-only user: sees devices, cannot change them, can change own password.
+	e.post("/logout", nil)
+	e.post("/login", url.Values{"user": {"olga"}, "password": {"viewerpass1"}})
+	if code, page := e.get("/"); code != 200 || !strings.Contains(page, "sw1") || strings.Contains(page, "+ Add device") || !strings.Contains(page, "read-only") {
+		t.Fatalf("viewer device list: %d", code)
+	}
+	if code, _ := e.post(fmt.Sprintf("/devices/%d/delete", dev.ID), nil); code != 403 {
+		t.Fatalf("viewer deleted a device: %d", code)
+	}
+	if code, _ := e.get("/users"); code != 403 {
+		t.Fatalf("viewer opened users: %d", code)
+	}
+	if _, body := e.post("/settings/password", url.Values{"current": {"viewerpass1"}, "new": {"viewerpass2"}, "confirm": {"viewerpass2"}}); !strings.Contains(body, "Password changed") {
+		t.Fatalf("viewer password change: %s", flash(body))
+	}
+	if u, _ := e.st.UserByName("olga"); u.Role != store.RoleViewer {
+		t.Fatalf("password change altered the role: %+v", u)
+	}
+
+	if code, _ := e.api("DELETE", fmt.Sprintf("/api/v1/devices/%d", dev.ID), adminTok, ""); code != 204 {
+		t.Fatalf("delete: %d", code)
+	}
+	log, _ := e.st.AuditLog("api:ansible", 20)
+	if len(log) < 4 {
+		t.Fatalf("API changes not in the change log: %+v", log)
+	}
+}

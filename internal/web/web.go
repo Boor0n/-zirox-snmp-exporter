@@ -73,41 +73,49 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /logout", s.logout)
 
 	p := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireLogin(h)) }
+	a := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireAdmin(h)) }
 	p("GET /{$}", s.devices)
-	p("GET /devices/new", s.deviceForm)
-	p("POST /devices/new", s.deviceSave)
-	p("POST /devices/test", s.deviceTest)
-	p("POST /devices/bulk", s.deviceBulk)
+	a("GET /devices/new", s.deviceForm)
+	a("POST /devices/new", s.deviceSave)
+	a("POST /devices/test", s.deviceTest)
+	a("POST /devices/bulk", s.deviceBulk)
 	p("GET /devices/{id}", s.deviceCard)
-	p("GET /devices/{id}/edit", s.deviceForm)
-	p("POST /devices/{id}/edit", s.deviceSave)
-	p("POST /devices/{id}/refresh", s.deviceRefresh)
-	p("POST /devices/{id}/toggle", s.deviceToggle)
-	p("POST /devices/{id}/delete", s.deviceDelete)
-	p("POST /devices/{id}/selection", s.deviceSelection)
+	a("GET /devices/{id}/edit", s.deviceForm)
+	a("POST /devices/{id}/edit", s.deviceSave)
+	a("POST /devices/{id}/refresh", s.deviceRefresh)
+	a("POST /devices/{id}/toggle", s.deviceToggle)
+	a("POST /devices/{id}/delete", s.deviceDelete)
+	a("POST /devices/{id}/selection", s.deviceSelection)
 	p("GET /devices/{id}/status", s.deviceStatus)
 	p("GET /credentials", s.credentials)
-	p("GET /credentials/new", s.credentialForm)
-	p("POST /credentials/new", s.credentialSave)
-	p("GET /credentials/{id}/edit", s.credentialForm)
-	p("POST /credentials/{id}/edit", s.credentialSave)
-	p("POST /credentials/{id}/delete", s.credentialDelete)
+	a("GET /credentials/new", s.credentialForm)
+	a("POST /credentials/new", s.credentialSave)
+	a("GET /credentials/{id}/edit", s.credentialForm)
+	a("POST /credentials/{id}/edit", s.credentialSave)
+	a("POST /credentials/{id}/delete", s.credentialDelete)
 	p("GET /profiles", s.profiles)
-	p("POST /profiles", s.profileSave)
-	p("POST /profiles/{id}/delete", s.profileDelete)
+	a("POST /profiles", s.profileSave)
+	a("POST /profiles/{id}/delete", s.profileDelete)
 	p("GET /settings", s.settings)
-	p("POST /settings", s.settingsSave)
+	a("POST /settings", s.settingsSave)
 	p("POST /settings/password", s.passwordSave)
-	p("GET /import", s.importPage)
-	p("POST /import", s.importSave)
+	a("GET /import", s.importPage)
+	a("POST /import", s.importSave)
 	p("GET /prometheus", s.prometheusHelp)
+	a("GET /users", s.users)
+	a("POST /users", s.userCreate)
+	a("POST /users/{id}", s.userUpdate)
+	a("POST /users/{id}/delete", s.userDelete)
+	a("POST /tokens", s.tokenCreate)
+	a("POST /tokens/{id}/delete", s.tokenDelete)
+	s.registerAPI(mux)
 	p("GET /audit", s.auditPage)
 }
 
 // audit records a change made through the UI. Failures are logged, not
 // shown: the change itself already happened.
 func (s *Server) audit(r *http.Request, action, target, details string) {
-	if err := s.st.AddAudit(s.sessionUser(r), action, target, details); err != nil {
+	if err := s.st.AddAudit(s.actor(r), action, target, details); err != nil {
 		s.log.Warn("audit log", "err", err)
 	}
 }
@@ -235,7 +243,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 		data = map[string]any{}
 	}
 	data["Page"] = page
-	data["User"] = s.sessionUser(r)
+	u, _ := s.currentUser(r)
+	data["User"] = u.Name
+	data["CanEdit"] = u.Role == store.RoleAdmin
 	data["Version"] = s.cfg.Version
 	if m := r.URL.Query().Get("msg"); m != "" {
 		data["Flash"] = m
@@ -975,7 +985,7 @@ func (s *Server) profileDelete(w http.ResponseWriter, r *http.Request) {
 // ---- settings ----
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "settings", map[string]any{"Settings": s.st.Settings(), "Min": store.MinIntervalSec, "Admin": s.st.GetSetting(store.SettingAdmin, ""), "MaxDiscovery": s.en.MaxConcurrentDiscovery()})
+	s.render(w, r, "settings", map[string]any{"Settings": s.st.Settings(), "Min": store.MinIntervalSec, "Admin": s.sessionUser(r), "MaxDiscovery": s.en.MaxConcurrentDiscovery()})
 }
 
 func (s *Server) settingsSave(w http.ResponseWriter, r *http.Request) {
@@ -1005,22 +1015,26 @@ func (s *Server) settingsSave(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) passwordSave(w http.ResponseWriter, r *http.Request) {
-	user := s.sessionUser(r)
-	if !s.checkPassword(user, r.FormValue("current")) {
+	u, ok := s.checkPassword(s.sessionUser(r), r.FormValue("current"))
+	if !ok {
 		redirectErr(w, r, "/settings", errors.New("current password is wrong"))
 		return
 	}
 	pw := r.FormValue("new")
-	if len(pw) < 8 || pw != r.FormValue("confirm") {
-		redirectErr(w, r, "/settings", errors.New("new password: at least 8 characters, both fields must match"))
-		return
-	}
-	if _, err := EnsureAdmin(s.st, user, pw, true); err != nil {
+	if err := checkNewPassword(pw, r.FormValue("confirm")); err != nil {
 		redirectErr(w, r, "/settings", err)
 		return
 	}
-	s.setSession(w, user)
-	s.audit(r, "password changed", user, "")
+	if err := setPassword(&u, pw); err != nil {
+		redirectErr(w, r, "/settings", err)
+		return
+	}
+	if err := s.st.SaveUser(&u); err != nil {
+		redirectErr(w, r, "/settings", err)
+		return
+	}
+	s.setSession(w, u)
+	s.audit(r, "password changed", u.Name, "")
 	redirect(w, r, "/settings", "Password changed")
 }
 
@@ -1167,7 +1181,7 @@ func (s *Server) importCredential(name, version, community, def, hint string) (s
 			version = "2c"
 		}
 		if version != "1" && version != "2c" {
-			return store.Credential{}, errors.New("CSV can set a community only for v1/v2c; for v3 use the credential column")
+			return store.Credential{}, errors.New("a community can be given only for v1/v2c; for v3 use saved credentials by name")
 		}
 		return s.findOrCreateCredential(store.Credential{Version: version, Community: community}, hint)
 	case def != "":

@@ -144,6 +144,32 @@ acc-sw-12,10.0.1.12,DC1,,
 
 Страница «Change log» показывает, кто и когда добавил, изменил или удалил устройство, учётные данные, профиль, поменял галочки (какие объекты добавлены и сняты), настройки и пароль, а также входы в систему (и неудачные) и запуски Refresh, в том числе по расписанию. Записи хранятся год.
 
+## Пользователи
+
+Страница «Users» (только для admin): пользователи с ролью **admin** (могут менять всё) или **read-only** (видят устройства, порты, настройки и журнал, но ничего не меняют, кроме своего пароля). Нельзя удалить или понизить последнего администратора. Учётная запись из `ZIROX_ADMIN_USER` создаётся при первом запуске; при обновлении со старой версии существующий admin переносится автоматически.
+
+## REST API
+
+Токены создаются на странице «Users» → «API tokens» и показываются один раз (в базе хранится только SHA-256). Токен read-only может только читать.
+
+```bash
+T=zx_...   # токен
+H="Authorization: Bearer $T"
+curl -H "$H" http://zirox:9116/api/v1/devices                 # все устройства со статусом опроса (?group=DC1)
+curl -H "$H" http://zirox:9116/api/v1/devices/5               # одно устройство со всеми найденными объектами
+curl -H "$H" -X POST http://zirox:9116/api/v1/devices \
+     -d '{"name":"acc-sw-12","address":"10.0.1.12","group":"DC1","profile":"Fast (6 s)","credential":"Nexus RO v3"}'
+curl -H "$H" -X PATCH http://zirox:9116/api/v1/devices/5 -d '{"group":"DC2","interval_sec":30,"enabled":false}'
+curl -H "$H" -X POST http://zirox:9116/api/v1/devices/5/refresh
+curl -H "$H" -X POST http://zirox:9116/api/v1/devices/5/selection \
+     -d '{"select":["Ethernet1/5","Supervisor CPU"],"unselect":["Ethernet1/1"]}'
+curl -H "$H" -X DELETE http://zirox:9116/api/v1/devices/5
+curl -H "$H" http://zirox:9116/api/v1/profiles
+curl -H "$H" http://zirox:9116/api/v1/credentials           # только имена и версии, без секретов
+```
+
+При создании вместо `credential` можно передать `"version":"2c","community":"..."`. Новое устройство сразу проходит полный опрос. В `selection` объекты называются ключом (имя порта или датчика, как в поле `key`) или `id`; не названные объекты не меняются. Все изменения через API попадают в журнал как `api:<имя токена>`.
+
 ## Безопасность
 
 - Вход в UI по логину и паролю (bcrypt), сессия в подписанной cookie (`HttpOnly`, `SameSite=Strict`), POST-запросы с чужого сайта отклоняются.

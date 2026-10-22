@@ -1,0 +1,60 @@
+{{define "content"}}
+<h1>Users</h1>
+<p class="muted"><b>Admin</b> can change everything. <b>Read-only</b> sees devices, ports, settings and the change log but cannot change anything except their own password.</p>
+<table class="list">
+  <thead><tr><th>Name</th><th>Role</th><th>Created</th><th>Change role or reset password</th><th></th></tr></thead>
+  <tbody>
+  {{range .Users}}
+  <tr>
+    <td><b>{{.Name}}</b>{{if eq .Name $.Me}} <span class="muted small">(you)</span>{{end}}</td>
+    <td>{{if eq .Role "admin"}}admin{{else}}read-only{{end}}</td>
+    <td class="nowrap">{{.CreatedAt.Format "2006-01-02"}}</td>
+    <td>
+      <form method="post" action="/users/{{.ID}}" class="inline">
+        <select name="role"><option value="viewer" {{if eq .Role "viewer"}}selected{{end}}>read-only</option><option value="admin" {{if eq .Role "admin"}}selected{{end}}>admin</option></select>
+        <input name="password" type="password" minlength="8" placeholder="new password (optional)" autocomplete="new-password">
+        <button>Save</button>
+      </form>
+    </td>
+    <td class="actions">{{if ne .Name $.Me}}<form method="post" action="/users/{{.ID}}/delete" class="inline"><button class="link danger" data-confirm="Delete user {{.Name}}?">Delete</button></form>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+<h2>New user</h2>
+<form method="post" action="/users" class="card form inline-form">
+  <label>Name <input name="name" required autocomplete="off"></label>
+  <label>Role <select name="role"><option value="viewer">read-only</option><option value="admin">admin</option></select></label>
+  <label>Password <input name="password" type="password" minlength="8" required autocomplete="new-password"></label>
+  <label>Repeat <input name="confirm" type="password" minlength="8" required autocomplete="new-password"></label>
+  <div class="buttons"><button class="primary">Add user</button></div>
+</form>
+
+<h1 id="tokens">API tokens</h1>
+<p class="muted">For scripts and automation: <code>curl -H "Authorization: Bearer zx_…" http://this-host:9116/api/v1/devices</code>. See the README for all calls. A read-only token can only read.</p>
+{{with .NewToken}}
+<div class="flash ok">Token <b>{{$.NewTokenName}}</b> created. Copy it now, it is not shown again:<br><code class="token">{{.}}</code></div>
+{{end}}
+<table class="list">
+  <thead><tr><th>Name</th><th>Role</th><th>Created by</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+  <tbody>
+  {{range .Tokens}}
+  <tr>
+    <td><b>{{.Name}}</b></td>
+    <td>{{if eq .Role "admin"}}admin{{else}}read-only{{end}}</td>
+    <td>{{.CreatedBy}}</td>
+    <td class="nowrap">{{.CreatedAt.Format "2006-01-02"}}</td>
+    <td>{{ago .LastUsed}}</td>
+    <td class="actions"><form method="post" action="/tokens/{{.ID}}/delete" class="inline"><button class="link danger" data-confirm="Revoke token {{.Name}}? Scripts using it will stop working.">Revoke</button></form></td>
+  </tr>
+  {{else}}
+  <tr><td colspan="6" class="empty">No tokens.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+<form method="post" action="/tokens" class="card form inline-form">
+  <label>Name <input name="name" required placeholder="e.g. ansible" autocomplete="off"></label>
+  <label>Role <select name="role"><option value="viewer">read-only</option><option value="admin">admin</option></select></label>
+  <div class="buttons"><button class="primary">Create token</button></div>
+</form>
+{{end}}
