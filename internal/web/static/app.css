@@ -99,3 +99,4 @@ pre.code { background: var(--card); border: 1px solid var(--line); border-radius
   table.list th:nth-child(n+5), table.list td:nth-child(n+5) { display: none; }
   table.list td.actions, table.list th:last-child { display: table-cell; }
 }
+.nowrap { white-space: nowrap; }

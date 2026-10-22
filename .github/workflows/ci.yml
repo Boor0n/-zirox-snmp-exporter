@@ -33,3 +33,4 @@ jobs:
           /tmp/promtool check rules deploy/alerts.yml
           /tmp/promtool test rules deploy/alerts_test.yml
           jq -e '.panels | length > 0' deploy/grafana-dashboard.json
+          sh -n deploy/install.sh

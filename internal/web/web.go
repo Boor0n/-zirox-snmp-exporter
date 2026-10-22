@@ -101,6 +101,61 @@ func (s *Server) Register(mux *http.ServeMux) {
 	p("GET /import", s.importPage)
 	p("POST /import", s.importSave)
 	p("GET /prometheus", s.prometheusHelp)
+	p("GET /audit", s.auditPage)
+}
+
+// audit records a change made through the UI. Failures are logged, not
+// shown: the change itself already happened.
+func (s *Server) audit(r *http.Request, action, target, details string) {
+	if err := s.st.AddAudit(s.sessionUser(r), action, target, details); err != nil {
+		s.log.Warn("audit log", "err", err)
+	}
+}
+
+func (s *Server) auditPage(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	entries, err := s.st.AuditLog(q, 500)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, r, "audit", map[string]any{"Entries": entries, "Q": q})
+}
+
+// deviceChanges describes what an edit changed, for the audit log.
+func (s *Server) deviceChanges(a, b store.Device) string {
+	var ch []string
+	add := func(field string, x, y any) {
+		if x != y {
+			ch = append(ch, fmt.Sprintf("%s: %v → %v", field, x, y))
+		}
+	}
+	add("name", a.Name, b.Name)
+	add("address", a.Address, b.Address)
+	add("port", a.Port, b.Port)
+	add("group", a.Group, b.Group)
+	add("interval", a.IntervalSec, b.IntervalSec)
+	if a.ProfileID != b.ProfileID {
+		ch = append(ch, "profile: "+s.profileName(a.ProfileID)+" → "+s.profileName(b.ProfileID))
+	}
+	if a.CredentialID != b.CredentialID {
+		ch = append(ch, "credentials: "+s.credName(a.CredentialID)+" → "+s.credName(b.CredentialID))
+	}
+	return strings.Join(ch, "; ")
+}
+
+func (s *Server) profileName(id int64) string {
+	if p, err := s.st.Profile(id); err == nil {
+		return p.Name
+	}
+	return "global"
+}
+
+func (s *Server) credName(id int64) string {
+	if c, err := s.st.Credential(id); err == nil {
+		return c.Name
+	}
+	return fmt.Sprint(id)
 }
 
 var funcs = template.FuncMap{
@@ -518,6 +573,11 @@ func (s *Server) deviceSave(w http.ResponseWriter, r *http.Request) {
 		s.rerenderDeviceForm(w, r, d, msg, false)
 		return
 	}
+	if isNew {
+		s.audit(r, "device added", d.Name, d.Address)
+	} else {
+		s.audit(r, "device changed", d.Name, s.deviceChanges(before, d))
+	}
 	// A new device, or one whose address or credentials changed, gets a full discovery.
 	if isNew || before.Address != d.Address || before.Port != d.Port || before.CredentialID != d.CredentialID || before.LastDiscovery.IsZero() {
 		s.en.Refresh(d.ID)
@@ -637,6 +697,9 @@ func (s *Server) deviceRefresh(w http.ResponseWriter, r *http.Request) {
 		back = "/"
 	}
 	if s.en.Refresh(id) {
+		if d, err := s.st.Device(id); err == nil {
+			s.audit(r, "refresh", d.Name, "")
+		}
 		redirect(w, r, back, "Full discovery started")
 		return
 	}
@@ -653,6 +716,11 @@ func (s *Server) deviceToggle(w http.ResponseWriter, r *http.Request) {
 		redirectErr(w, r, "/", err)
 		return
 	}
+	if d.Enabled {
+		s.audit(r, "device disabled", d.Name, "")
+	} else {
+		s.audit(r, "device enabled", d.Name, "")
+	}
 	s.en.Reload(d.ID)
 	if !d.Enabled && d.LastDiscovery.IsZero() {
 		s.en.Refresh(d.ID)
@@ -662,10 +730,16 @@ func (s *Server) deviceToggle(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deviceDelete(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
+	d, err := s.st.Device(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	if err := s.st.DeleteDevice(id); err != nil {
 		redirectErr(w, r, "/", err)
 		return
 	}
+	s.audit(r, "device deleted", d.Name, d.Address)
 	s.en.Reload(id)
 	redirect(w, r, "/", "Device deleted")
 }
@@ -682,9 +756,13 @@ func (s *Server) deviceSelection(w http.ResponseWriter, r *http.Request) {
 			sel[n] = true
 		}
 	}
+	before, _ := s.st.Objects(id)
 	if err := s.st.SaveSelection(id, sel); err != nil {
 		redirectErr(w, r, fmt.Sprintf("/devices/%d", id), err)
 		return
+	}
+	if d, err := s.st.Device(id); err == nil {
+		s.audit(r, "selection changed", d.Name, selectionChanges(before, sel))
 	}
 	s.en.Reload(id)
 	redirect(w, r, fmt.Sprintf("/devices/%d", id), fmt.Sprintf("Applied: polling %d objects", len(sel)))
@@ -706,7 +784,11 @@ func (s *Server) deviceBulk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := r.FormValue("action")
+	var names []string
 	for _, id := range ids {
+		if d, err := s.st.Device(id); err == nil {
+			names = append(names, d.Name)
+		}
 		switch action {
 		case "refresh":
 			s.en.Refresh(id)
@@ -729,8 +811,14 @@ func (s *Server) deviceBulk(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	names := map[string]string{"refresh": "Full discovery started", "enable": "Enabled", "disable": "Disabled", "delete": "Deleted", "profile": "Profile assigned"}
-	redirect(w, r, "/", fmt.Sprintf("%s: %d devices", names[action], len(ids)))
+	details := strings.Join(names, ", ")
+	if action == "profile" {
+		id, _ := strconv.ParseInt(r.FormValue("profile_id"), 10, 64)
+		details = s.profileName(id) + ": " + details
+	}
+	s.audit(r, "bulk "+action, fmt.Sprintf("%d devices", len(names)), details)
+	msgs := map[string]string{"refresh": "Full discovery started", "enable": "Enabled", "disable": "Disabled", "delete": "Deleted", "profile": "Profile assigned"}
+	redirect(w, r, "/", fmt.Sprintf("%s: %d devices", msgs[action], len(ids)))
 }
 
 // ---- credentials ----
@@ -805,15 +893,22 @@ func (s *Server) credentialSave(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "credential_form", map[string]any{"Cred": c, "Error": err.Error()})
 		return
 	}
+	if pathID(r) == 0 {
+		s.audit(r, "credentials added", c.Name, "SNMP v"+c.Version)
+	} else {
+		s.audit(r, "credentials changed", c.Name, "SNMP v"+c.Version)
+	}
 	_ = s.en.ReloadAll()
 	redirect(w, r, "/credentials", "Credentials saved")
 }
 
 func (s *Server) credentialDelete(w http.ResponseWriter, r *http.Request) {
+	name := s.credName(pathID(r))
 	if err := s.st.DeleteCredential(pathID(r)); err != nil {
 		redirectErr(w, r, "/credentials", err)
 		return
 	}
+	s.audit(r, "credentials deleted", name, "")
 	redirect(w, r, "/credentials", "Deleted")
 }
 
@@ -852,19 +947,27 @@ func (s *Server) profileSave(w http.ResponseWriter, r *http.Request) {
 		redirectErr(w, r, "/profiles", errors.New("enter a profile name"))
 		return
 	}
+	isNew := p.ID == 0
 	if err := s.st.SaveProfile(&p); err != nil {
 		redirectErr(w, r, "/profiles", err)
 		return
 	}
+	action := "profile changed"
+	if isNew {
+		action = "profile added"
+	}
+	s.audit(r, action, p.Name, fmt.Sprintf("interval %d s, timeout %d s, retries %d, auto-select up %v", p.IntervalSec, p.TimeoutSec, p.Retries, p.AutoSelectUp))
 	_ = s.en.ReloadAll()
 	redirect(w, r, "/profiles", "Profile saved and applied")
 }
 
 func (s *Server) profileDelete(w http.ResponseWriter, r *http.Request) {
+	name := s.profileName(pathID(r))
 	if err := s.st.DeleteProfile(pathID(r)); err != nil {
 		redirectErr(w, r, "/profiles", err)
 		return
 	}
+	s.audit(r, "profile deleted", name, "")
 	_ = s.en.ReloadAll()
 	redirect(w, r, "/profiles", "Profile deleted; its devices now use the global settings")
 }
@@ -872,7 +975,7 @@ func (s *Server) profileDelete(w http.ResponseWriter, r *http.Request) {
 // ---- settings ----
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "settings", map[string]any{"Settings": s.st.Settings(), "Min": store.MinIntervalSec, "Admin": s.st.GetSetting(store.SettingAdmin, "")})
+	s.render(w, r, "settings", map[string]any{"Settings": s.st.Settings(), "Min": store.MinIntervalSec, "Admin": s.st.GetSetting(store.SettingAdmin, ""), "MaxDiscovery": s.en.MaxConcurrentDiscovery()})
 }
 
 func (s *Server) settingsSave(w http.ResponseWriter, r *http.Request) {
@@ -881,11 +984,22 @@ func (s *Server) settingsSave(w http.ResponseWriter, r *http.Request) {
 		TimeoutSec:   formInt(r, "timeout_sec"),
 		Retries:      formInt(r, "retries"),
 		AutoSelectUp: r.FormValue("auto_select_up") == "on",
+
+		AutoRefreshHours: formInt(r, "auto_refresh_hours"),
+		AutoRefreshFrom:  formInt(r, "auto_refresh_from"),
+		AutoRefreshTo:    formInt(r, "auto_refresh_to"),
 	}
 	if err := s.st.SaveSettings(st); err != nil {
 		redirectErr(w, r, "/settings", err)
 		return
 	}
+	st = s.st.Settings()
+	refresh := "off"
+	if st.AutoRefreshHours > 0 {
+		refresh = fmt.Sprintf("every %d h, %02d:00-%02d:00", st.AutoRefreshHours, st.AutoRefreshFrom, st.AutoRefreshTo)
+	}
+	s.audit(r, "settings changed", "global", fmt.Sprintf("interval %d s, timeout %d s, retries %d, auto-select up %v, scheduled refresh %s",
+		st.IntervalSec, st.TimeoutSec, st.Retries, st.AutoSelectUp, refresh))
 	_ = s.en.ReloadAll()
 	redirect(w, r, "/settings", "Global settings applied")
 }
@@ -906,6 +1020,7 @@ func (s *Server) passwordSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setSession(w, user)
+	s.audit(r, "password changed", user, "")
 	redirect(w, r, "/settings", "Password changed")
 }
 
@@ -950,6 +1065,9 @@ func (s *Server) importSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Imported"] = ok
+	if ok > 0 {
+		s.audit(r, "import", fmt.Sprintf("%d devices", ok), fmt.Sprintf("%d lines, %d failed", len(results), len(results)-ok))
+	}
 	s.render(w, r, "import", data)
 }
 
@@ -1067,4 +1185,36 @@ func (s *Server) prometheusHelp(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	s.render(w, r, "prometheus", map[string]any{"Base": scheme + "://" + r.Host, "Host": r.Host})
+}
+
+// selectionChanges lists the objects ticked and unticked by a selection save.
+func selectionChanges(before []store.Object, sel map[int64]bool) string {
+	var on, off []string
+	for _, o := range before {
+		switch {
+		case sel[o.ID] && !o.Selected:
+			on = append(on, o.Name)
+		case !sel[o.ID] && o.Selected:
+			off = append(off, o.Name)
+		}
+	}
+	var parts []string
+	if len(on) > 0 {
+		parts = append(parts, "+ "+shortList(on))
+	}
+	if len(off) > 0 {
+		parts = append(parts, "− "+shortList(off))
+	}
+	if len(parts) == 0 {
+		return "no changes"
+	}
+	return strings.Join(parts, "; ")
+}
+
+func shortList(names []string) string {
+	const maxNames = 20
+	if len(names) <= maxNames {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:maxNames], ", ") + fmt.Sprintf(" and %d more", len(names)-maxNames)
 }

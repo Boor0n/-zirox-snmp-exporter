@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
@@ -293,4 +294,59 @@ func flash(body string) string {
 		out = append(out, x[1])
 	}
 	return strings.Join(out, " | ")
+}
+
+func TestChangeLogAndScheduledRefreshSettings(t *testing.T) {
+	e := setup(t)
+	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"wrong"}})
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+
+	devForm := url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
+		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}}
+	e.post("/devices/new", devForm)
+	e.waitDiscovery(1)
+	objs, _ := e.st.Objects(1)
+	form := url.Values{}
+	for _, o := range objs {
+		if o.Key == "Ethernet1/2" || (o.Selected && o.Key != "Ethernet1/1") {
+			form.Add("obj", fmt.Sprint(o.ID))
+		}
+	}
+	e.post("/devices/1/selection", form)
+	devForm.Set("address", "10.0.0.1")
+	devForm.Set("credential_id", fmt.Sprint(mustDevice(t, e.st, 1).CredentialID))
+	devForm.Set("group", "DC1")
+	e.post("/devices/1/edit", devForm)
+
+	if _, body := e.post("/settings", url.Values{"interval_sec": {"60"}, "timeout_sec": {"5"}, "retries": {"1"},
+		"auto_refresh_hours": {"168"}, "auto_refresh_from": {"1"}, "auto_refresh_to": {"5"}}); !strings.Contains(body, "Global settings applied") {
+		t.Fatalf("settings not saved: %s", flash(body))
+	}
+	if st := e.st.Settings(); st.AutoRefreshHours != 168 || st.AutoRefreshFrom != 1 || st.AutoRefreshTo != 5 {
+		t.Fatalf("scheduled refresh settings = %+v", st)
+	}
+	e.post("/devices/1/delete", nil)
+
+	_, page := e.get("/audit")
+	for _, want := range []string{
+		"login failed", "device added", "selection changed", "+ Ethernet1/2", "− Ethernet1/1",
+		"group:  → DC1", "settings changed", "scheduled refresh every 168 h, 01:00-05:00", "device deleted",
+	} {
+		if !strings.Contains(html.UnescapeString(page), want) {
+			t.Errorf("change log lacks %q", want)
+		}
+	}
+	if _, page := e.get("/audit?q=DC1"); strings.Contains(page, "device added") || !strings.Contains(page, "device changed") {
+		t.Error("change log search does not filter")
+	}
+}
+
+func mustDevice(t *testing.T, st *store.Store, id int64) store.Device {
+	t.Helper()
+	d, err := st.Device(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }
