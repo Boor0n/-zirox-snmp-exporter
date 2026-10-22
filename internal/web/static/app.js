@@ -75,5 +75,20 @@
     $$('tr.obj', box.closest('table')).forEach((tr) => {
       if (!tr.hidden) tr.querySelector('input[type=checkbox]').checked = box.checked;
     });
+    markDirty();
   }));
+
+  // Warn about ticks that were changed but not applied yet.
+  const dirtyBadge = form.querySelector('[data-dirty]');
+  const boxes = $$('input[name=obj]', form);
+  const initial = boxes.map((b) => b.checked);
+  let submitting = false;
+  const isDirty = () => boxes.some((b, i) => b.checked !== initial[i]);
+  function markDirty() { if (dirtyBadge) dirtyBadge.hidden = !isDirty(); }
+  boxes.forEach((b) => b.addEventListener('change', markDirty));
+  $$('[data-select-visible]', form).forEach((b) => b.addEventListener('click', markDirty));
+  form.addEventListener('submit', () => { submitting = true; });
+  window.addEventListener('beforeunload', (e) => {
+    if (!submitting && isDirty()) { e.preventDefault(); e.returnValue = ''; }
+  });
 })();

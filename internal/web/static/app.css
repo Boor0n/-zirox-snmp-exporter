@@ -1,12 +1,12 @@
 :root {
   --bg: #f6f7f9; --fg: #1d2330; --muted: #6b7280; --card: #fff; --line: #e3e6eb;
-  --accent: #2563eb; --ok: #15803d; --bad: #b91c1c; --warn: #b45309; --run: #7c3aed;
+  --accent: #2563eb; --on-accent: #fff; --ok: #15803d; --bad: #b91c1c; --warn: #b45309; --run: #7c3aed;
   --ok-bg: #e7f6ec; --bad-bg: #fde8e8; --warn-bg: #fef3c7; --run-bg: #efe9fe; --new-bg: #eef5ff;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #12151b; --fg: #e5e7eb; --muted: #9ca3af; --card: #1b2029; --line: #2c3340;
-    --accent: #60a5fa; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24; --run: #a78bfa;
+    --accent: #60a5fa; --on-accent: #0b1220; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24; --run: #a78bfa;
     --ok-bg: #12301f; --bad-bg: #3a1717; --warn-bg: #3a2d10; --run-bg: #2a2142; --new-bg: #172840;
   }
 }
@@ -34,7 +34,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 16px
 .grid3 .card > div { margin-top: 4px; }
 button, .btn { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; display: inline-block; }
 button:hover, .btn:hover { border-color: var(--accent); text-decoration: none; }
-button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 button.danger { color: var(--bad); }
 button.link { border: 0; background: none; padding: 0; color: var(--accent); }
 button.link.danger { color: var(--bad); }
@@ -96,9 +96,32 @@ tr.errrow td { color: var(--bad); }
 pre.code, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 pre.code { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; }
 @media (max-width: 760px) {
-  table.list th:nth-child(n+5), table.list td:nth-child(n+5) { display: none; }
-  table.list td.actions, table.list th:last-child { display: table-cell; }
+  /* Header: brand and logout on one line, the menu scrolls sideways below them. */
+  .top { gap: 0 12px; }
+  .brand { flex: 1; }
+  .top nav { order: 3; flex: 0 0 calc(100% + 32px); flex-wrap: nowrap; overflow-x: auto; margin: 0 -16px; padding: 0 6px; border-top: 1px solid var(--line); }
+  .top nav a { padding: 10px; white-space: nowrap; }
+  /* Device list: keep name, status and actions; the rest is on the device card. */
+  table.devices th:nth-child(3), table.devices td:nth-child(3),
+  table.devices th:nth-child(n+5), table.devices td:nth-child(n+5) { display: none; }
+  table.devices td.actions, table.devices th:last-child { display: table-cell; }
+  main { padding: 14px 12px 32px; }
 }
 .nowrap { white-space: nowrap; }
 .token { display: inline-block; margin-top: 6px; padding: 4px 8px; background: var(--bg, #fff); user-select: all; word-break: break-all; }
 .form fieldset.plain { display: contents; }
+.table-wrap { overflow-x: auto; border-radius: 8px; }
+.table-wrap > table.list { min-width: 100%; }
+.errtext { color: var(--bad); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.inline-form .full { width: 100%; margin: 4px 0; }
+.inline-form h3.full { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+[hidden] { display: none !important; }
+a:focus-visible, button:focus-visible, .btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  button, .btn, input, select { min-height: 36px; }
+  input[type=checkbox] { min-height: 0; width: 20px; height: 20px; }
+  button.link { min-height: 0; padding: 8px 0; }
+}

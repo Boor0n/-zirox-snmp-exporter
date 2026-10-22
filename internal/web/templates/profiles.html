@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1>Poll profiles</h1>
 <p class="muted">A profile sets how often the selected ports and sensors are polled. Devices without a profile use the global settings ({{.Global.IntervalSec}} s, <a href="/settings">change</a>). A device's own interval overrides its profile. Changes apply immediately, no restart needed.</p>
-<table class="list">
+<div class="table-wrap"><table class="list">
   <thead><tr><th>Name</th><th>Interval</th><th>Timeout</th><th>Retries</th><th>Auto-select new up ports</th><th>Devices</th><th></th></tr></thead>
   <tbody>
   {{range .Profiles}}
@@ -15,7 +15,7 @@
   </tr>
   {{end}}
   </tbody>
-</table>
+</table></div>
 {{if .CanEdit}}<h2>{{if .Edit.ID}}Edit "{{.Edit.Name}}"{{else}}New profile{{end}}</h2>
 <form method="post" action="/profiles" class="card form inline-form">
   <input type="hidden" name="id" value="{{.Edit.ID}}">
