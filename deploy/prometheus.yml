@@ -1,0 +1,8 @@
+# Add to the scrape_configs section of your prometheus.yml.
+scrape_configs:
+  - job_name: zirox-snmp
+    http_sd_configs:
+      - url: http://zirox-host:9116/sd
+        refresh_interval: 60s
+        # authorization: {credentials: "<ZIROX_SCRAPE_TOKEN>"}
+    # authorization: {credentials: "<ZIROX_SCRAPE_TOKEN>"}

@@ -1,0 +1,56 @@
+{{define "content"}}
+{{$d := .Device}}
+<h1>{{if $d.ID}}Edit {{$d.Name}}{{else}}New device{{end}}</h1>
+{{with .Error}}<div class="flash err">{{.}}</div>{{end}}
+{{with .TestOK}}<div class="flash ok">{{.}}</div>{{end}}
+<form method="post" action="{{if $d.ID}}/devices/{{$d.ID}}/edit{{else}}/devices/new{{end}}" class="card form">
+  <input type="hidden" name="id" value="{{$d.ID}}">
+  <fieldset>
+    <legend>Device</legend>
+    <label>IP address or DNS name <input name="address" value="{{$d.Address}}" required placeholder="10.0.0.1"></label>
+    <label>Name <input name="name" value="{{$d.Name}}" placeholder="defaults to the address"></label>
+    <label>SNMP port <input name="port" type="number" min="1" max="65535" value="{{$d.Port}}"></label>
+    <label>Group / site <input name="group" value="{{$d.Group}}" placeholder="e.g. DC1-core"></label>
+    <label class="check"><input type="checkbox" name="enabled" {{if $d.Enabled}}checked{{end}}> Poll this device</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>SNMP access</legend>
+    <label>Credentials
+      <select name="credential_id" data-toggle-new="cred-new">
+        {{range .Credentials}}<option value="{{.ID}}" {{if and (eq .ID $d.CredentialID) (not $.NewCred)}}selected{{end}}>{{.Name}} (v{{.Version}})</option>{{end}}
+        <option value="new" {{if $.NewCred}}selected{{end}}>— enter version and community here —</option>
+      </select>
+    </label>
+    <div id="cred-new" class="sub">
+      {{template "credfields" .Cred}}
+      <p class="muted small">If identical credentials are already saved, they are reused.</p>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Poll frequency</legend>
+    <label>Poll profile
+      <select name="profile_id">
+        <option value="0">Global settings ({{.Global.IntervalSec}} s)</option>
+        {{range .Profiles}}<option value="{{.ID}}" {{if eq .ID $d.ProfileID}}selected{{end}}>{{.Name}} — {{.IntervalSec}} s</option>{{end}}
+      </select>
+    </label>
+    <label>Custom interval for this device, s
+      <input name="interval_sec" type="number" min="0" value="{{if $d.IntervalSec}}{{$d.IntervalSec}}{{end}}" placeholder="empty = from profile">
+    </label>
+    <p class="muted small">Priority: device interval → profile → global. Minimum 5 s.</p>
+  </fieldset>
+
+  <div class="buttons">
+    <button class="primary">{{if $d.ID}}Save{{else}}Add and discover{{end}}</button>
+    <button formaction="/devices/test" formnovalidate>Test connection</button>
+    <a href="{{if $d.ID}}/devices/{{$d.ID}}{{else}}/{{end}}">Cancel</a>
+  </div>
+</form>
+{{if $d.ID}}
+<form method="post" action="/devices/{{$d.ID}}/delete" class="danger-zone">
+  <button class="danger" data-confirm="Delete device {{$d.Name}}?">Delete device</button>
+</form>
+{{end}}
+{{end}}

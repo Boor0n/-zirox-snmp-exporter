@@ -1,0 +1,108 @@
+# Prometheus alerting rules for Zirox SNMP Exporter.
+# Add to prometheus.yml:
+#   rule_files:
+#     - /etc/prometheus/zirox-alerts.yml
+# Thresholds are starting points; tune them for your network.
+groups:
+  - name: zirox-devices
+    rules:
+      - alert: ZiroxDeviceUnreachable
+        expr: zirox_poll_success == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.device }} ({{ $labels.address }}) does not answer SNMP"
+          description: "The last SNMP polls of {{ $labels.device }} failed for 5 minutes. Check reachability, ACLs and credentials."
+
+      - alert: ZiroxHighCPU
+        expr: zirox_cpu_utilization_percent{window!="5m"} > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU {{ $labels.name }} on {{ $labels.device }} at {{ $value | humanize }}%"
+
+      - alert: ZiroxHighMemory
+        expr: |
+          zirox_memory_utilization_percent > 90
+          or
+          100 * zirox_memory_used_bytes / (zirox_memory_used_bytes + zirox_memory_free_bytes) > 90
+          or
+          100 * (1 - zirox_memory_available_bytes / zirox_memory_total_bytes) > 95
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory {{ $labels.name }} on {{ $labels.device }} at {{ $value | humanize }}%"
+
+      - alert: ZiroxHighTemperature
+        expr: zirox_temperature_celsius > 70
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} on {{ $labels.device }} is {{ $value | humanize }} °C"
+
+      - alert: ZiroxHardwareProblem
+        # CISCO-ENVMON states: 1 normal, 2 warning, 3 critical, 4 shutdown, 5 notPresent, 6 notFunctioning.
+        expr: '{__name__=~"zirox_envmon_.+_state"} > 1 != 5'
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.name }} on {{ $labels.device }} reports state {{ $value }}"
+          description: "Fan, power supply or temperature sensor is not normal (2=warning, 3=critical, 4=shutdown, 6=notFunctioning)."
+
+      - alert: ZiroxStorageAlmostFull
+        expr: zirox_storage_used_bytes / zirox_storage_size_bytes > 0.9 and zirox_storage_size_bytes > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} on {{ $labels.device }} is {{ $value | humanizePercentage }} full"
+
+  - name: zirox-interfaces
+    rules:
+      - alert: ZiroxInterfaceDown
+        # Only ports that are administratively up and selected for polling.
+        expr: ifOperStatus == 2 and ifAdminStatus == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.ifName }} on {{ $labels.device }} is down"
+          description: "{{ $labels.ifName }} ({{ $labels.ifAlias }}) is admin up but operationally down."
+
+      - alert: ZiroxInterfaceErrors
+        expr: rate(ifInErrors[5m]) + rate(ifOutErrors[5m]) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.ifName }} on {{ $labels.device }}: {{ $value | humanize }} errors/s"
+
+      - alert: ZiroxInterfaceHighUtilization
+        expr: |
+          (
+            rate(ifHCInOctets[5m]) * 8 / (ifHighSpeed * 1e6) > 0.9
+            or
+            rate(ifHCOutOctets[5m]) * 8 / (ifHighSpeed * 1e6) > 0.9
+          ) and ifHighSpeed > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.ifName }} on {{ $labels.device }} above 90% of link speed"
+
+  - name: zirox-routing
+    rules:
+      - alert: ZiroxBGPPeerDown
+        # Peers that are administratively enabled but not established.
+        expr: zirox_bgp_peer_state != 6 and on(device, peer) zirox_bgp_peer_admin_status == 2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "BGP peer {{ $labels.peer }} (AS {{ $labels.remote_as }}) on {{ $labels.device }} is down"
+          description: "State {{ $value }} (1=idle, 2=connect, 3=active, 4=opensent, 5=openconfirm, 6=established)."

@@ -1,0 +1,25 @@
+{{define "content"}}
+<h1>Settings</h1>
+<h2>Global polling</h2>
+<p class="muted">Used by devices without a profile and without their own interval. The button applies changes to all of them immediately.</p>
+<form method="post" action="/settings" class="card form inline-form">
+  <label>Interval, s <input name="interval_sec" type="number" min="{{.Min}}" value="{{.Settings.IntervalSec}}" required></label>
+  <label>Timeout, s <input name="timeout_sec" type="number" min="1" value="{{.Settings.TimeoutSec}}"></label>
+  <label>Retries <input name="retries" type="number" min="0" max="5" value="{{.Settings.Retries}}"></label>
+  <label class="check"><input type="checkbox" name="auto_select_up" {{if .Settings.AutoSelectUp}}checked{{end}}> Automatically select new ports that are up</label>
+  <h3>Scheduled refresh</h3>
+  <p class="muted">Re-runs the full discovery of every enabled device, so new ports and sensors are picked up without clicking Refresh. At most {{.MaxDiscovery}} devices are walked at a time. 0 turns it off.</p>
+  <label>Every, hours <input name="auto_refresh_hours" type="number" min="0" value="{{.Settings.AutoRefreshHours}}"></label>
+  <label>Only from, hour <input name="auto_refresh_from" type="number" min="0" max="23" value="{{.Settings.AutoRefreshFrom}}"></label>
+  <label>to, hour <input name="auto_refresh_to" type="number" min="0" max="23" value="{{.Settings.AutoRefreshTo}}"></label>
+  <p class="muted">Server local time. Equal hours mean any time of day. Example: every 168 hours (weekly) from 1 to 5 at night.</p>
+  <div class="buttons"><button class="primary">Apply</button></div>
+</form>
+<h2>Administrator password ({{.Admin}})</h2>
+<form method="post" action="/settings/password" class="card form inline-form">
+  <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
+  <label>New password <input name="new" type="password" autocomplete="new-password" minlength="8" required></label>
+  <label>Repeat <input name="confirm" type="password" autocomplete="new-password" minlength="8" required></label>
+  <div class="buttons"><button>Change password</button></div>
+</form>
+{{end}}

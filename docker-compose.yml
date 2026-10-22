@@ -1,0 +1,18 @@
+services:
+  zirox:
+    build: .
+    image: zirox-snmp-exporter:latest
+    container_name: zirox
+    restart: unless-stopped
+    ports:
+      - "9116:9116"
+    volumes:
+      - ./data:/data
+    environment:
+      ZIROX_ADMIN_USER: admin
+      # Set a password here, or leave empty: a random one is printed once in `docker logs zirox`.
+      ZIROX_ADMIN_PASSWORD: ""
+      # Optional: require "Authorization: Bearer <token>" on /probe, /sd and /metrics.
+      ZIROX_SCRAPE_TOKEN: ""
+      # Address Prometheus should use to reach this exporter (host:port), when it differs from the URL used for /sd.
+      ZIROX_SD_ADDRESS: ""
