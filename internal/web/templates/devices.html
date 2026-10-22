@@ -1,7 +1,7 @@
 {{define "content"}}
 <div class="bar">
   <h1>Devices <span class="muted">{{.Total}}</span></h1>
-  <a class="btn primary" href="/devices/new">+ Add device</a>
+  {{if .CanEdit}}<a class="btn primary" href="/devices/new">+ Add device</a>{{end}}
 </div>
 <div class="stats">
   <a href="/?status=ok" class="stat ok">Polling OK: {{index .Stats "ok"}}</a>
@@ -40,22 +40,22 @@
     <td>{{.Selected}} / {{.Total}}</td>
     <td title="{{.Eff.Source}}">{{secs .Eff.Interval}} s</td>
     <td>{{if .Snap}}{{ago .Snap.At}} <span class="muted small">{{dur .Snap.Duration}}</span>{{else}}—{{end}}</td>
-    <td class="actions">
+    <td class="actions">{{if $.CanEdit}}
       <button class="link" formaction="/devices/{{.ID}}/refresh?back=list" name="back" value="list" title="Full discovery: find new ports and sensors">Refresh</button>
       <a href="/devices/{{.ID}}/edit">Edit</a>
-    </td>
+    {{end}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="8" class="empty">No devices yet. <a href="/devices/new">Add the first one</a> or <a href="/import">import a CSV</a>.</td></tr>
+  <tr><td colspan="8" class="empty">No devices yet.{{if $.CanEdit}} <a href="/devices/new">Add the first one</a> or <a href="/import">import a CSV</a>.{{end}}</td></tr>
   {{end}}
   </tbody>
 </table>
-<div class="bulk">
+{{if .CanEdit}}<div class="bulk">
   Selected:
   <button name="action" value="refresh">Refresh</button>
   <button name="action" value="enable">Enable</button>
   <button name="action" value="disable">Disable</button>
   <button name="action" value="delete" class="danger" data-confirm="Delete the selected devices?">Delete</button>
-</div>
+</div>{{end}}
 </form>
 {{end}}

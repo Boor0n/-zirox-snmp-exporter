@@ -100,3 +100,5 @@ pre.code { background: var(--card); border: 1px solid var(--line); border-radius
   table.list td.actions, table.list th:last-child { display: table-cell; }
 }
 .nowrap { white-space: nowrap; }
+.token { display: inline-block; margin-top: 6px; padding: 4px 8px; background: var(--bg, #fff); user-select: all; word-break: break-all; }
+.form fieldset.plain { display: contents; }

@@ -15,12 +15,13 @@
     <a href="/" {{if or (eq .Page "devices") (eq .Page "device") (eq .Page "device_form")}}class="on"{{end}}>Devices</a>
     <a href="/credentials" {{if or (eq .Page "credentials") (eq .Page "credential_form")}}class="on"{{end}}>Credentials</a>
     <a href="/profiles" {{if eq .Page "profiles"}}class="on"{{end}}>Poll profiles</a>
-    <a href="/import" {{if eq .Page "import"}}class="on"{{end}}>Import</a>
+    {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on"{{end}}>Import</a>{{end}}
     <a href="/settings" {{if eq .Page "settings"}}class="on"{{end}}>Settings</a>
     <a href="/prometheus" {{if eq .Page "prometheus"}}class="on"{{end}}>Prometheus</a>
     <a href="/audit" {{if eq .Page "audit"}}class="on"{{end}}>Change log</a>
+    {{if .CanEdit}}<a href="/users" {{if eq .Page "users"}}class="on"{{end}}>Users</a>{{end}}
   </nav>
-  <form method="post" action="/logout" class="logout"><span>{{.User}}</span><button class="link">Log out</button></form>
+  <form method="post" action="/logout" class="logout"><span>{{.User}}{{if not .CanEdit}} <span class="badge">read-only</span>{{end}}</span><button class="link">Log out</button></form>
 </header>
 {{end}}
 <main>

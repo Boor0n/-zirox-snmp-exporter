@@ -85,6 +85,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
 	details TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log(at);
+CREATE TABLE IF NOT EXISTS users (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	name       TEXT NOT NULL UNIQUE,
+	pw_hash    TEXT NOT NULL,
+	role       TEXT NOT NULL,
+	created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS api_tokens (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	name       TEXT NOT NULL UNIQUE,
+	hash       TEXT NOT NULL UNIQUE,
+	role       TEXT NOT NULL,
+	created_by TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	last_used  INTEGER NOT NULL DEFAULT 0
+);
 `
 
 // Object states.
@@ -107,6 +123,32 @@ const (
 	SettingAutoRefreshFrom  = "auto_refresh_from"
 	SettingAutoRefreshTo    = "auto_refresh_to"
 )
+
+// Roles of users and API tokens.
+const (
+	RoleAdmin  = "admin"  // may change everything
+	RoleViewer = "viewer" // read-only
+)
+
+// User is a person who can log into the UI.
+type User struct {
+	ID        int64
+	Name      string
+	Hash      string // bcrypt
+	Role      string
+	CreatedAt time.Time
+}
+
+// APIToken grants access to the REST API. Only the SHA-256 of the token is stored.
+type APIToken struct {
+	ID        int64
+	Name      string
+	Hash      string
+	Role      string
+	CreatedBy string
+	CreatedAt time.Time
+	LastUsed  time.Time
+}
 
 // AuditRetention is how long audit log entries are kept.
 const AuditRetention = 365 * 24 * time.Hour
@@ -229,7 +271,29 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	return &Store{db: db}, nil
+	s := &Store{db: db}
+	if err := s.migrateAdmin(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate admin: %w", err)
+	}
+	return s, nil
+}
+
+// migrateAdmin moves the single admin account of older versions, kept in
+// settings, into the users table.
+func (s *Store) migrateAdmin() error {
+	name, hash := s.GetSetting(SettingAdmin, ""), s.GetSetting(SettingAdminPw, "")
+	if name == "" || hash == "" {
+		return nil
+	}
+	if n, err := s.UserCount(); err != nil || n > 0 {
+		return err
+	}
+	if err := s.SaveUser(&User{Name: name, Hash: hash, Role: RoleAdmin}); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM settings WHERE key IN (?,?)`, SettingAdmin, SettingAdminPw)
+	return err
 }
 
 // Close closes the database.
@@ -679,4 +743,168 @@ func (s *Store) AuditLog(query string, limit int) ([]AuditEntry, error) {
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// ---- users ----
+
+const userCols = `id,name,pw_hash,role,created_at`
+
+func scanUser(sc interface{ Scan(...any) error }) (User, error) {
+	var u User
+	var at int64
+	err := sc.Scan(&u.ID, &u.Name, &u.Hash, &u.Role, &at)
+	u.CreatedAt = time.Unix(at, 0)
+	return u, err
+}
+
+// UserCount returns the number of users.
+func (s *Store) UserCount() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+// AdminCount returns the number of users with the admin role.
+func (s *Store) AdminCount() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users WHERE role=?`, RoleAdmin).Scan(&n)
+	return n, err
+}
+
+// Users lists all users by name.
+func (s *Store) Users() ([]User, error) {
+	rows, err := s.db.Query(`SELECT ` + userCols + ` FROM users ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// User returns a user by id.
+func (s *Store) User(id int64) (User, error) {
+	u, err := scanUser(s.db.QueryRow(`SELECT `+userCols+` FROM users WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return u, ErrNotFound
+	}
+	return u, err
+}
+
+// UserByName returns a user by login name.
+func (s *Store) UserByName(name string) (User, error) {
+	u, err := scanUser(s.db.QueryRow(`SELECT `+userCols+` FROM users WHERE name=?`, name))
+	if errors.Is(err, sql.ErrNoRows) {
+		return u, ErrNotFound
+	}
+	return u, err
+}
+
+// SaveUser inserts or updates a user.
+func (s *Store) SaveUser(u *User) error {
+	if u.Role != RoleAdmin && u.Role != RoleViewer {
+		return fmt.Errorf("unknown role %q", u.Role)
+	}
+	if u.ID == 0 {
+		u.CreatedAt = time.Now()
+		res, err := s.db.Exec(`INSERT INTO users(name,pw_hash,role,created_at) VALUES(?,?,?,?)`, u.Name, u.Hash, u.Role, u.CreatedAt.Unix())
+		if err != nil {
+			return err
+		}
+		u.ID, err = res.LastInsertId()
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE users SET name=?, pw_hash=?, role=? WHERE id=?`, u.Name, u.Hash, u.Role, u.ID)
+	return err
+}
+
+// DeleteUser removes a user.
+func (s *Store) DeleteUser(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM users WHERE id=?`, id)
+	return err
+}
+
+// ---- API tokens ----
+
+const tokenCols = `id,name,hash,role,created_by,created_at,last_used`
+
+func scanToken(sc interface{ Scan(...any) error }) (APIToken, error) {
+	var t APIToken
+	var at, used int64
+	err := sc.Scan(&t.ID, &t.Name, &t.Hash, &t.Role, &t.CreatedBy, &at, &used)
+	t.CreatedAt = time.Unix(at, 0)
+	if used > 0 {
+		t.LastUsed = time.Unix(used, 0)
+	}
+	return t, err
+}
+
+// APITokens lists all tokens by name.
+func (s *Store) APITokens() ([]APIToken, error) {
+	rows, err := s.db.Query(`SELECT ` + tokenCols + ` FROM api_tokens ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []APIToken
+	for rows.Next() {
+		t, err := scanToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// APITokenByHash finds a token by the SHA-256 of its value.
+func (s *Store) APITokenByHash(hash string) (APIToken, error) {
+	t, err := scanToken(s.db.QueryRow(`SELECT `+tokenCols+` FROM api_tokens WHERE hash=?`, hash))
+	if errors.Is(err, sql.ErrNoRows) {
+		return t, ErrNotFound
+	}
+	return t, err
+}
+
+// CreateAPIToken stores a new token.
+func (s *Store) CreateAPIToken(t *APIToken) error {
+	if t.Role != RoleAdmin && t.Role != RoleViewer {
+		return fmt.Errorf("unknown role %q", t.Role)
+	}
+	t.CreatedAt = time.Now()
+	res, err := s.db.Exec(`INSERT INTO api_tokens(name,hash,role,created_by,created_at) VALUES(?,?,?,?,?)`,
+		t.Name, t.Hash, t.Role, t.CreatedBy, t.CreatedAt.Unix())
+	if err != nil {
+		return err
+	}
+	t.ID, err = res.LastInsertId()
+	return err
+}
+
+// TouchAPIToken records that a token was used, at most once a minute.
+func (s *Store) TouchAPIToken(id int64) {
+	now := time.Now().Unix()
+	_, _ = s.db.Exec(`UPDATE api_tokens SET last_used=? WHERE id=? AND last_used < ?`, now, id, now-60)
+}
+
+// APIToken returns a token by id.
+func (s *Store) APIToken(id int64) (APIToken, error) {
+	t, err := scanToken(s.db.QueryRow(`SELECT `+tokenCols+` FROM api_tokens WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return t, ErrNotFound
+	}
+	return t, err
+}
+
+// DeleteAPIToken revokes a token.
+func (s *Store) DeleteAPIToken(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM api_tokens WHERE id=?`, id)
+	return err
 }

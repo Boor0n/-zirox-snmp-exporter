@@ -8,15 +8,15 @@
   <tr>
     <td><b>{{.Name}}</b></td><td>{{.IntervalSec}} s</td><td>{{.TimeoutSec}} s</td><td>{{.Retries}}</td>
     <td>{{if .AutoSelectUp}}yes{{else}}no{{end}}</td><td>{{index $.Uses .ID}}</td>
-    <td class="actions">
+    <td class="actions">{{if $.CanEdit}}
       <a href="/profiles?edit={{.ID}}">Edit</a>
       <form method="post" action="/profiles/{{.ID}}/delete" class="inline"><button class="link danger" data-confirm="Delete profile {{.Name}}? Its devices will switch to the global settings.">Delete</button></form>
-    </td>
+    {{end}}</td>
   </tr>
   {{end}}
   </tbody>
 </table>
-<h2>{{if .Edit.ID}}Edit "{{.Edit.Name}}"{{else}}New profile{{end}}</h2>
+{{if .CanEdit}}<h2>{{if .Edit.ID}}Edit "{{.Edit.Name}}"{{else}}New profile{{end}}</h2>
 <form method="post" action="/profiles" class="card form inline-form">
   <input type="hidden" name="id" value="{{.Edit.ID}}">
   <label>Name <input name="name" value="{{.Edit.Name}}" required></label>
@@ -25,5 +25,5 @@
   <label>Retries <input name="retries" type="number" min="0" max="5" value="{{.Edit.Retries}}"></label>
   <label class="check"><input type="checkbox" name="auto_select_up" {{if .Edit.AutoSelectUp}}checked{{end}}> Automatically select new ports that are up</label>
   <div class="buttons"><button class="primary">Save and apply</button>{{if .Edit.ID}} <a href="/profiles">Cancel</a>{{end}}</div>
-</form>
+</form>{{end}}
 {{end}}

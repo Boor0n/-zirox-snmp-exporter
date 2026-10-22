@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,65 +19,102 @@ const (
 	sessionTTL = 12 * time.Hour
 )
 
-// EnsureAdmin creates the admin account on first start, or resets its
-// password when resetPassword is set.
+// EnsureAdmin creates the admin account on first start (when there are no
+// users at all), or resets the password of that account when resetPassword
+// is set.
 func EnsureAdmin(st *store.Store, user, password string, resetPassword bool) (created bool, err error) {
-	if st.GetSetting(store.SettingAdminPw, "") != "" && !resetPassword {
+	n, err := st.UserCount()
+	if err != nil {
+		return false, err
+	}
+	if n > 0 && !resetPassword {
 		return false, nil
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return false, err
 	}
-	if err := st.SetSetting(store.SettingAdmin, user); err != nil {
+	u, err := st.UserByName(user)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return false, err
 	}
-	return true, st.SetSetting(store.SettingAdminPw, string(hash))
+	u.Name, u.Hash, u.Role = user, string(hash), store.RoleAdmin
+	return true, st.SaveUser(&u)
 }
 
-func (s *Server) checkPassword(user, password string) bool {
-	if user != s.st.GetSetting(store.SettingAdmin, "") {
-		return false
+// checkPassword returns the user when the name and password match.
+func (s *Server) checkPassword(name, password string) (store.User, bool) {
+	u, err := s.st.UserByName(name)
+	if err != nil {
+		// Spend the same time as a real check so user names cannot be probed.
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		return u, false
 	}
-	return bcrypt.CompareHashAndPassword([]byte(s.st.GetSetting(store.SettingAdminPw, "")), []byte(password)) == nil
+	return u, bcrypt.CompareHashAndPassword([]byte(u.Hash), []byte(password)) == nil
 }
 
-func (s *Server) setSession(w http.ResponseWriter, user string) {
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy password"), bcrypt.DefaultCost)
+
+func (s *Server) setSession(w http.ResponseWriter, u store.User) {
 	exp := strconv.FormatInt(time.Now().Add(sessionTTL).Unix(), 10)
-	// The password hash is part of the signed message, so changing the
-	// password invalidates all existing sessions.
-	msg := user + "|" + exp
-	val := url.QueryEscape(user) + "|" + exp + "|" + s.box.Sign(msg+"|"+s.st.GetSetting(store.SettingAdminPw, ""))
+	// The password hash and role are part of the signed message, so changing
+	// either invalidates that user's existing sessions.
+	val := url.QueryEscape(u.Name) + "|" + exp + "|" + s.box.Sign(sessionMsg(u, exp))
 	http.SetCookie(w, &http.Cookie{
 		Name: cookieName, Value: val, Path: "/", HttpOnly: true,
 		Secure: s.cfg.CookieSecure, SameSite: http.SameSiteStrictMode, MaxAge: int(sessionTTL.Seconds()),
 	})
 }
 
-func (s *Server) sessionUser(r *http.Request) string {
+func sessionMsg(u store.User, exp string) string {
+	return u.Name + "|" + exp + "|" + u.Role + "|" + u.Hash
+}
+
+// currentUser returns the logged-in user of a request.
+func (s *Server) currentUser(r *http.Request) (store.User, bool) {
 	c, err := r.Cookie(cookieName)
 	if err != nil {
-		return ""
+		return store.User{}, false
 	}
 	parts := strings.Split(c.Value, "|")
 	if len(parts) != 3 {
-		return ""
+		return store.User{}, false
 	}
-	user, err := url.QueryUnescape(parts[0])
+	name, err := url.QueryUnescape(parts[0])
 	if err != nil {
-		return ""
+		return store.User{}, false
 	}
 	exp, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil || time.Now().Unix() > exp {
-		return ""
+		return store.User{}, false
 	}
-	if !s.box.Verify(user+"|"+parts[1]+"|"+s.st.GetSetting(store.SettingAdminPw, ""), parts[2]) {
-		return ""
+	u, err := s.st.UserByName(name)
+	if err != nil || !s.box.Verify(sessionMsg(u, parts[1]), parts[2]) {
+		return store.User{}, false
 	}
-	if user != s.st.GetSetting(store.SettingAdmin, "") {
-		return ""
-	}
-	return user
+	return u, true
+}
+
+// sessionUser returns the logged-in user name, or "".
+func (s *Server) sessionUser(r *http.Request) string {
+	u, _ := s.currentUser(r)
+	return u.Name
+}
+
+func (s *Server) isAdmin(r *http.Request) bool {
+	u, ok := s.currentUser(r)
+	return ok && u.Role == store.RoleAdmin
+}
+
+// requireAdmin lets only admins through; read-only users get 403.
+func (s *Server) requireAdmin(h http.Handler) http.Handler {
+	return s.requireLogin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.isAdmin(r) {
+			http.Error(w, "read-only account: ask an administrator", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
 }
 
 // requireLogin protects the UI and rejects cross-site form posts.
@@ -120,13 +158,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
 		next = "/"
 	}
-	if !s.checkPassword(user, pass) {
+	u, ok := s.checkPassword(user, pass)
+	if !ok {
 		_ = s.st.AddAudit(user, "login failed", clientIP(r), "")
 		time.Sleep(500 * time.Millisecond)
 		s.render(w, r, "login", map[string]any{"Next": next, "Error": "Wrong username or password"})
 		return
 	}
-	s.setSession(w, user)
+	s.setSession(w, u)
 	_ = s.st.AddAudit(user, "login", clientIP(r), "")
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
