@@ -2,6 +2,13 @@ name: release
 on:
   push:
     tags: ['v*']
+  # "Run workflow" button in the Actions tab: builds and publishes a release
+  # from the chosen branch without pushing a tag by hand.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to create, e.g. v0.1.0'
+        required: true
 permissions:
   contents: write
 jobs:
@@ -14,9 +21,11 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
       - name: Build archives
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
         run: |
           set -eu
-          ver=${GITHUB_REF_NAME}
+          ver=${VERSION}
           mkdir dist
           for arch in amd64 arm64; do
             d=zirox-${ver}-linux-${arch}
@@ -29,4 +38,5 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: gh release create "$VERSION" dist/* --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
