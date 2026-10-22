@@ -108,6 +108,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 	a("POST /users/{id}/delete", s.userDelete)
 	a("POST /tokens", s.tokenCreate)
 	a("POST /tokens/{id}/delete", s.tokenDelete)
+	p("GET /custom-oids", s.customOIDs)
+	a("POST /custom-oids", s.customOIDSave)
+	a("POST /custom-oids/{id}/delete", s.customOIDDelete)
+	a("POST /custom-oids/refresh-all", s.customRefreshAll)
 	s.registerAPI(mux)
 	p("GET /audit", s.auditPage)
 }

@@ -16,6 +16,7 @@
     <a href="/credentials" {{if or (eq .Page "credentials") (eq .Page "credential_form")}}class="on"{{end}}>Credentials</a>
     <a href="/profiles" {{if eq .Page "profiles"}}class="on"{{end}}>Poll profiles</a>
     {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on"{{end}}>Import</a>{{end}}
+    <a href="/custom-oids" {{if eq .Page "custom_oids"}}class="on"{{end}}>Custom OIDs</a>
     <a href="/settings" {{if eq .Page "settings"}}class="on"{{end}}>Settings</a>
     <a href="/prometheus" {{if eq .Page "prometheus"}}class="on"{{end}}>Prometheus</a>
     <a href="/audit" {{if eq .Page "audit"}}class="on"{{end}}>Change log</a>

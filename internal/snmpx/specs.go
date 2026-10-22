@@ -190,11 +190,11 @@ var Kinds = map[string]Kind{
 }
 
 // Categories in display order.
-var Categories = []string{"Ports", "CPU", "Memory", "Sensors", "Storage", "Firewall", "Routing"}
+var Categories = []string{"Ports", "CPU", "Memory", "Sensors", "Storage", "Firewall", "Routing", CategoryCustom}
 
 // CategoryOf returns the UI section of an object kind.
 func CategoryOf(kind string) string {
-	if k, ok := Kinds[kind]; ok {
+	if k, ok := kindSpec(kind); ok {
 		return k.Category
 	}
 	return "Other"

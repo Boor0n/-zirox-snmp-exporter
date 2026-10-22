@@ -101,6 +101,17 @@ CREATE TABLE IF NOT EXISTS api_tokens (
 	created_at INTEGER NOT NULL,
 	last_used  INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS custom_oids (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	name        TEXT NOT NULL UNIQUE,
+	help        TEXT NOT NULL DEFAULT '',
+	oid         TEXT NOT NULL,
+	mode        TEXT NOT NULL,
+	name_oid    TEXT NOT NULL DEFAULT '',
+	counter     INTEGER NOT NULL DEFAULT 0,
+	scale       REAL NOT NULL DEFAULT 1,
+	auto_select INTEGER NOT NULL DEFAULT 1
+);
 `
 
 // Object states.
@@ -149,6 +160,29 @@ type APIToken struct {
 	CreatedAt time.Time
 	LastUsed  time.Time
 }
+
+// Custom OID modes.
+const (
+	CustomScalar = "scalar" // one value, the OID is read as is
+	CustomTable  = "table"  // a table column, one object per row
+)
+
+// CustomOID is an OID the user added on top of the built-in ones. It is
+// found on Refresh like any other object and polled when selected.
+type CustomOID struct {
+	ID         int64
+	Name       string // Prometheus metric name
+	Help       string
+	OID        string
+	Mode       string // CustomScalar or CustomTable
+	NameOID    string // table only: column with row names
+	Counter    bool
+	Scale      float64
+	AutoSelect bool // select newly found objects
+}
+
+// Kind is the object kind of objects found for this OID.
+func (c CustomOID) Kind() string { return "custom_" + strconv.FormatInt(c.ID, 10) }
 
 // AuditRetention is how long audit log entries are kept.
 const AuditRetention = 365 * 24 * time.Hour
@@ -501,6 +535,85 @@ func (s *Store) SaveProfile(p *PollProfile) error {
 func (s *Store) DeleteProfile(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM poll_profiles WHERE id=?`, id)
 	return err
+}
+
+// ---- custom OIDs ----
+
+const customCols = `id,name,help,oid,mode,name_oid,counter,scale,auto_select`
+
+func scanCustom(sc interface{ Scan(...any) error }) (CustomOID, error) {
+	var c CustomOID
+	err := sc.Scan(&c.ID, &c.Name, &c.Help, &c.OID, &c.Mode, &c.NameOID, &c.Counter, &c.Scale, &c.AutoSelect)
+	return c, err
+}
+
+// CustomOIDs lists the user's OIDs.
+func (s *Store) CustomOIDs() ([]CustomOID, error) {
+	rows, err := s.db.Query(`SELECT ` + customCols + ` FROM custom_oids ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CustomOID
+	for rows.Next() {
+		c, err := scanCustom(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// CustomOID returns one custom OID.
+func (s *Store) CustomOID(id int64) (CustomOID, error) {
+	c, err := scanCustom(s.db.QueryRow(`SELECT `+customCols+` FROM custom_oids WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return c, ErrNotFound
+	}
+	return c, err
+}
+
+// SaveCustomOID inserts or updates a custom OID.
+func (s *Store) SaveCustomOID(c *CustomOID) error {
+	if c.Scale == 0 {
+		c.Scale = 1
+	}
+	if c.ID == 0 {
+		res, err := s.db.Exec(`INSERT INTO custom_oids(name,help,oid,mode,name_oid,counter,scale,auto_select) VALUES(?,?,?,?,?,?,?,?)`,
+			c.Name, c.Help, c.OID, c.Mode, c.NameOID, c.Counter, c.Scale, c.AutoSelect)
+		if err != nil {
+			return err
+		}
+		c.ID, err = res.LastInsertId()
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE custom_oids SET name=?,help=?,oid=?,mode=?,name_oid=?,counter=?,scale=?,auto_select=? WHERE id=?`,
+		c.Name, c.Help, c.OID, c.Mode, c.NameOID, c.Counter, c.Scale, c.AutoSelect, c.ID)
+	return err
+}
+
+// DeleteCustomOID removes a custom OID and the objects found for it.
+func (s *Store) DeleteCustomOID(id int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM objects WHERE kind=?`, CustomOID{ID: id}.Kind()); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM custom_oids WHERE id=?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CustomObjectCount returns how many devices have objects of a custom OID.
+func (s *Store) CustomObjectCount(id int64) int {
+	var n int
+	_ = s.db.QueryRow(`SELECT COUNT(DISTINCT device_id) FROM objects WHERE kind=?`, CustomOID{ID: id}.Kind()).Scan(&n)
+	return n
 }
 
 // EnsureDefaultProfiles creates the starter profiles on an empty database.

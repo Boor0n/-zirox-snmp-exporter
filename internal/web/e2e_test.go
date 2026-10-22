@@ -472,3 +472,69 @@ func TestUsersRolesAndAPI(t *testing.T) {
 		t.Fatalf("API changes not in the change log: %+v", log)
 	}
 }
+
+func TestCustomOIDs(t *testing.T) {
+	e := setup(t)
+	t.Cleanup(func() { snmpx.SetCustom(nil) })
+	a := snmptest.Switch(2)
+	a.Set("1.3.6.1.4.1.99999.1.1.2.7", "pool-a")
+	a.Set("1.3.6.1.4.1.99999.1.1.3.7", 42)
+	e.agents["10.0.0.1"] = a
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	e.post("/devices/new", url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
+		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}})
+	e.waitDiscovery(1)
+
+	// Check the OID on the device first.
+	_, page := e.get("/custom-oids?check=1&device=1&walk=1&oid=.1.3.6.1.4.1.99999.1.1")
+	if !strings.Contains(page, "1.3.6.1.4.1.99999.1.1.3.7") || !strings.Contains(page, "pool-a") || !strings.Contains(page, "not a number") {
+		t.Fatalf("checker did not walk the subtree: %s", flash(page))
+	}
+	if _, page := e.get("/custom-oids?check=1&device=1&oid=1.3.6.1.4.1.99999.5.0"); !strings.Contains(page, "returned nothing") {
+		t.Error("checker must say when an OID is absent")
+	}
+
+	// A bad form keeps what was typed.
+	form := url.Values{"oid": {"1.3.6.1.4.1.99999.1.1.3"}, "mode": {"table"}, "name_oid": {"1.3.6.1.4.1.99999.1.1.2"},
+		"name": {"ifHCInOctets"}, "help": {"Pool used"}, "type": {"gauge"}, "scale": {"1024"}, "auto_select": {"on"}}
+	if _, page := e.post("/custom-oids", form); !strings.Contains(page, "already exported") || !strings.Contains(page, `value="1.3.6.1.4.1.99999.1.1.2"`) {
+		t.Fatalf("expected an error with the form kept: %s", flash(page))
+	}
+	form.Set("name", "vendor_pool_used_bytes")
+	if _, page := e.post("/custom-oids", form); !strings.Contains(page, "Saved") {
+		t.Fatalf("custom OID not saved: %s", flash(page))
+	}
+
+	// Refresh finds it and polling exports it.
+	e.post("/custom-oids/refresh-all", nil)
+	e.waitDiscovery(1)
+	if _, page := e.get("/devices/1"); !strings.Contains(page, "<h2>Custom") || !strings.Contains(page, "pool-a") {
+		t.Fatal("device card lacks the Custom section")
+	}
+	start := time.Now()
+	e.en.Reload(1)
+	e.waitPoll(1, start)
+	_, metrics := e.get("/probe?target=1")
+	if !strings.Contains(metrics, `vendor_pool_used_bytes{index="7",name="pool-a"} 43008`) {
+		t.Fatalf("metric missing from /probe:\n%s", metrics)
+	}
+
+	// Deleting it removes its objects from every device.
+	c, _ := e.st.CustomOIDs()
+	e.post("/custom-oids/"+fmt.Sprint(c[0].ID)+"/delete", nil)
+	if objs, _ := e.st.Objects(1); len(objs) == 0 {
+		t.Fatal("device lost its other objects")
+	} else {
+		for _, o := range objs {
+			if strings.HasPrefix(o.Kind, "custom_") {
+				t.Fatal("objects of a deleted custom OID remain")
+			}
+		}
+	}
+	_, page = e.get("/audit")
+	for _, want := range []string{"custom OID added", "refresh all devices", "custom OID deleted"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("change log lacks %q", want)
+		}
+	}
+}

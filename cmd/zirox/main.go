@@ -20,6 +20,7 @@ import (
 	"github.com/Boor0n/zirox-snmp-exporter/internal/engine"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/exporter"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/secret"
+	"github.com/Boor0n/zirox-snmp-exporter/internal/snmpx"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/store"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/web"
 )
@@ -76,6 +77,11 @@ func run(log *slog.Logger) error {
 	if err := st.EnsureDefaultProfiles(); err != nil {
 		return err
 	}
+	custom, err := st.CustomOIDs()
+	if err != nil {
+		return err
+	}
+	snmpx.SetCustom(custom)
 
 	adminUser := env("ZIROX_ADMIN_USER", "admin")
 	adminPass := os.Getenv("ZIROX_ADMIN_PASSWORD")

@@ -525,3 +525,19 @@ func (e *Engine) Test(t snmpx.Target) (snmpx.SystemInfo, error) {
 	}
 	return info, nil
 }
+
+// Lookup reads one OID or walks a subtree on a device, to check an OID by hand.
+func (e *Engine) Lookup(d store.Device, oid string, walk bool) ([]snmpx.LookupRow, bool, error) {
+	eff := e.Resolve(d)
+	eff.Timeout = max(eff.Timeout, 5*time.Second)
+	t, err := e.Target(d, eff)
+	if err != nil {
+		return nil, false, err
+	}
+	s, err := e.dial(t)
+	if err != nil {
+		return nil, false, err
+	}
+	defer s.Close()
+	return snmpx.Lookup(s, oid, walk)
+}

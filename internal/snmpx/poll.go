@@ -29,7 +29,7 @@ func Poll(s Session, objs []store.Object) ([]Sample, error) {
 		if !o.Selected || o.State == store.StateMissing {
 			continue
 		}
-		k, ok := Kinds[o.Kind]
+		k, ok := kindSpec(o.Kind)
 		if !ok {
 			continue
 		}
@@ -58,7 +58,7 @@ func Poll(s Session, objs []store.Object) ([]Sample, error) {
 		if !ok {
 			continue
 		}
-		k := Kinds[w.obj.Kind]
+		k, _ := kindSpec(w.obj.Kind)
 		v := asFloat(p)
 		if w.metric.Scale != 0 {
 			v *= w.metric.Scale

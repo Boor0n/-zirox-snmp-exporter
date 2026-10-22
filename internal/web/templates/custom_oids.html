@@ -1,0 +1,86 @@
+{{define "content"}}
+<div class="bar">
+  <h1>Custom OIDs</h1>
+  {{if and .CanEdit .Defs}}<form method="post" action="/custom-oids/refresh-all"><button data-confirm="Run a full discovery on every enabled device now?">Refresh all devices</button></form>{{end}}
+</div>
+<p class="muted">Add an OID that Zirox does not know yet. On the next Refresh every device that answers it gets new objects in the <b>Custom</b> section of its card; tick them to poll, like ports. Only numeric values are exported.</p>
+<div class="table-wrap"><table class="list">
+  <thead><tr><th>Metric</th><th>OID</th><th>Kind</th><th>Type</th><th>Devices</th><th></th></tr></thead>
+  <tbody>
+  {{range .Defs}}
+  <tr>
+    <td><b>{{.Name}}</b>{{with .Help}}<div class="muted small">{{.}}</div>{{end}}</td>
+    <td><code>{{.OID}}</code>{{with .NameOID}}<div class="muted small">names: <code>{{.}}</code></div>{{end}}</td>
+    <td>{{if eq .Mode $.Scalar}}single value{{else}}table column{{end}}</td>
+    <td class="nowrap">{{if .Counter}}counter{{else}}gauge{{end}}{{if ne .Scale 1.0}} × {{.Scale}}{{end}}</td>
+    <td>{{index $.Uses .ID}}</td>
+    <td class="actions">{{if $.CanEdit}}
+      <a href="/custom-oids?edit={{.ID}}">Edit</a>
+      <form method="post" action="/custom-oids/{{.ID}}/delete" class="inline"><button class="link danger" data-confirm="Delete {{.Name}}? It stops being polled on all devices.">Delete</button></form>
+    {{end}}</td>
+  </tr>
+  {{else}}
+  <tr><td colspan="6" class="empty">No custom OIDs yet.{{if $.CanEdit}} Check an OID on a device below, then add it.{{end}}</td></tr>
+  {{end}}
+  </tbody>
+</table></div>
+
+<h2 id="check">Check an OID on a device</h2>
+<p class="muted">Reads the OID right now, so you can see what the device returns before adding it. "Walk" lists a whole table column or subtree (up to {{.Limit}} values).</p>
+<form method="get" action="/custom-oids#check" class="card form inline-form">
+  <input type="hidden" name="check" value="1">
+  <label>Device
+    <select name="device" required>
+      <option value="">choose…</option>
+      {{range .Devices}}<option value="{{.ID}}" {{if eq .ID $.CheckDevice}}selected{{end}}>{{.Name}} ({{.Address}})</option>{{end}}
+    </select>
+  </label>
+  <label>OID <input name="oid" value="{{.CheckOID}}" required spellcheck="false" placeholder="1.3.6.1.2.1.1.3.0"></label>
+  <label class="check"><input type="checkbox" name="walk" value="1" {{if .CheckWalk}}checked{{end}}> Walk</label>
+  <div class="buttons"><button>Check</button></div>
+</form>
+{{with .CheckErr}}<div class="flash err">{{.}}</div>{{end}}
+{{if .Rows}}
+<div class="table-wrap"><table class="list">
+  <thead><tr><th>OID</th><th>Type</th><th>Value</th><th></th></tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <td><code>{{.OID}}</code></td>
+    <td class="muted small">{{.Type}}</td>
+    <td>{{.Text}}{{if not .Numeric}} <span class="badge">not a number</span>{{end}}</td>
+    <td class="actions">{{if $.CanEdit}}{{if and .Column .Numeric}}<a href="/custom-oids?use={{.Column}}&amp;mode={{$.Table}}#form" title="Every row of {{.Column}}">Add column</a>{{end}}{{if .Numeric}}<a href="/custom-oids?use={{.OID}}&amp;mode={{$.Scalar}}#form">Add value</a>{{end}}{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{if .More}}<p class="muted small">Only the first {{.Limit}} values are shown.</p>{{end}}
+{{end}}
+
+{{if .CanEdit}}
+<h2 id="form">{{if .Edit.ID}}Edit {{.Edit.Name}}{{else}}New custom OID{{end}}</h2>
+{{with .FormErr}}<div class="flash err">{{.}}</div>{{end}}
+<form method="post" action="/custom-oids" class="card form">
+  <input type="hidden" name="id" value="{{.Edit.ID}}">
+  <label>OID <input name="oid" value="{{.Edit.OID}}" required placeholder="1.3.6.1.4.1.9.9.48.1.1.1.5" spellcheck="false"></label>
+  <fieldset>
+    <legend>What the OID is</legend>
+    <label class="check option"><input type="radio" name="mode" value="{{.Table}}" {{if eq .Edit.Mode .Table}}checked{{end}}> Table column: one value per row (per port, per sensor, per pool…). Enter the column OID without the row index.</label>
+    <label class="check option"><input type="radio" name="mode" value="{{.Scalar}}" {{if eq .Edit.Mode .Scalar}}checked{{end}}> Single value: enter the full OID, usually ending in <code>.0</code>.</label>
+    <label>Row names from column (optional, table only) <input name="name_oid" value="{{.Edit.NameOID}}" placeholder="e.g. 1.3.6.1.4.1.9.9.48.1.1.1.2" spellcheck="false"></label>
+  </fieldset>
+  <label>Metric name <input name="name" value="{{.Edit.Name}}" required placeholder="cisco_mempool_used_bytes" pattern="[a-zA-Z_][a-zA-Z0-9_]*" spellcheck="false"></label>
+  <label>Description (optional) <input name="help" value="{{.Edit.Help}}" placeholder="Memory pool used, bytes"></label>
+  <label>Value type
+    <select name="type">
+      <option value="gauge" {{if not .Edit.Counter}}selected{{end}}>gauge: current value (temperature, sessions, percent)</option>
+      <option value="counter" {{if .Edit.Counter}}selected{{end}}>counter: only grows (bytes, packets, errors)</option>
+    </select>
+  </label>
+  <label>Multiplier <input name="scale" value="{{.Edit.Scale}}" inputmode="decimal"></label>
+  <label class="check"><input type="checkbox" name="auto_select" {{if .Edit.AutoSelect}}checked{{end}}> Tick newly found objects automatically</label>
+  <div class="buttons"><button class="primary">Save</button>{{if .Edit.ID}} <a href="/custom-oids">Cancel</a>{{end}}</div>
+</form>
+{{end}}
+
+{{end}}
