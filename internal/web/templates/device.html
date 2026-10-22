@@ -4,7 +4,7 @@
 <div class="bar">
   <div>
     <h1>{{$d.Name}} {{if not $d.Enabled}}<span class="badge">disabled</span>{{end}}</h1>
-    <div class="muted">{{$d.Address}}{{if ne $d.Port 161}}:{{$d.Port}}{{end}}{{with $d.Group}} · {{.}}{{end}} · {{.Credential.Name}} (v{{.Credential.Version}})</div>
+    <div class="muted">{{$d.Address}}{{if ne $d.Port 161}}:{{$d.Port}}{{end}}{{with $d.Group}} · {{.}}{{end}} · {{.Credential.Name}}{{if not (hasPrefix .Credential.Name "SNMPv")}} (v{{.Credential.Version}}){{end}}</div>
   </div>
   {{if .CanEdit}}<div class="buttons">
     <form method="post" action="/devices/{{$d.ID}}/refresh"><button class="primary" {{if .Discovering}}disabled{{end}} title="Walk the whole device again to find new ports and sensors">{{if .Discovering}}Discovering…{{else}}Refresh{{end}}</button></form>
@@ -46,36 +46,37 @@
 {{if .Groups}}
 <form method="post" action="/devices/{{$d.ID}}/selection" id="sel">
   <div class="toolbar sticky">
-    <input type="search" placeholder="Filter: name, description" data-filter-text>
+    <input type="search" placeholder="Filter: name, description" aria-label="Filter objects" data-filter-text>
     <label class="check"><input type="checkbox" data-filter-up> up only</label>
     <label class="check"><input type="checkbox" data-filter-phys> physical only</label>
     <label class="check"><input type="checkbox" data-filter-sel> selected only</label>
     <span class="spacer"></span>
     {{if .CanEdit}}<button type="button" data-select-visible="1">Select visible</button>
     <button type="button" data-select-visible="0">Clear visible</button>
+    <span class="badge warn" data-dirty hidden>Unsaved changes</span>
     <button class="primary">Apply</button>{{end}}
   </div>
   {{range .Groups}}
   <h2>{{.Category}} <span class="muted small">{{.Selected}} of {{len .Objects}} selected</span></h2>
-  <table class="list objects">
+  <div class="table-wrap"><table class="list objects">
     <thead><tr>
-      <th class="w1"><input type="checkbox" data-check-group {{if not $.CanEdit}}disabled{{end}}></th>
-      <th>Name</th><th>Description</th>
+      <th class="w1"><input type="checkbox" data-check-group aria-label="Select all {{.Category}}" {{if not $.CanEdit}}disabled{{end}}></th>
+      <th>Name</th>{{if .HasDescr}}<th>Description</th>{{end}}
       {{if eq .Category "Ports"}}<th>Type</th><th>Speed</th><th>Status</th>{{end}}
       <th></th>
     </tr></thead>
     <tbody>
-    {{range .Objects}}
+    {{$hd := .HasDescr}}{{range .Objects}}
     <tr class="obj {{.State}}" data-up="{{if eq .OperStatus 1}}1{{end}}" data-phys="{{if or (ne .Kind "if") (physical .IfType)}}1{{end}}">
-      <td><input type="checkbox" name="obj" value="{{.ID}}" {{if .Selected}}checked{{end}} {{if not $.CanEdit}}disabled{{end}}></td>
+      <td><input type="checkbox" name="obj" value="{{.ID}}" aria-label="Poll {{.Name}}" {{if .Selected}}checked{{end}} {{if not $.CanEdit}}disabled{{end}}></td>
       <td><b>{{.Name}}</b>{{if eq .Kind "if"}} <span class="muted small">#{{.Idx}}</span>{{end}}</td>
-      <td>{{if eq .Kind "if"}}{{.Alias}}{{if and .Alias (ne .Descr .Name)}} · {{end}}{{if ne .Descr .Name}}<span class="muted">{{.Descr}}</span>{{end}}{{else}}<span class="muted">{{.Descr}}</span>{{end}}</td>
+      {{if $hd}}<td>{{.Alias}}{{if and .Alias (ne .Descr .Name)}} · {{end}}{{if ne .Descr .Name}}<span class="muted">{{.Descr}}</span>{{end}}</td>{{end}}
       {{if eq .Kind "if"}}<td>{{iftype .IfType}}</td><td>{{speed .SpeedMbps}}</td><td><span class="oper o{{.OperStatus}}">{{oper .OperStatus}}</span></td>{{end}}
       <td>{{if eq .State "new"}}<span class="badge new">new</span>{{else if eq .State "missing"}}<span class="badge bad">gone</span>{{end}}</td>
     </tr>
     {{end}}
     </tbody>
-  </table>
+  </table></div>
   {{end}}
   {{if .CanEdit}}<div class="buttons"><button class="primary">Apply</button></div>{{end}}
 </form>

@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1>Users</h1>
 <p class="muted"><b>Admin</b> can change everything. <b>Read-only</b> sees devices, ports, settings and the change log but cannot change anything except their own password.</p>
-<table class="list">
+<div class="table-wrap"><table class="list">
   <thead><tr><th>Name</th><th>Role</th><th>Created</th><th>Change role or reset password</th><th></th></tr></thead>
   <tbody>
   {{range .Users}}
@@ -11,8 +11,8 @@
     <td class="nowrap">{{.CreatedAt.Format "2006-01-02"}}</td>
     <td>
       <form method="post" action="/users/{{.ID}}" class="inline">
-        <select name="role"><option value="viewer" {{if eq .Role "viewer"}}selected{{end}}>read-only</option><option value="admin" {{if eq .Role "admin"}}selected{{end}}>admin</option></select>
-        <input name="password" type="password" minlength="8" placeholder="new password (optional)" autocomplete="new-password">
+        <select name="role" aria-label="Role of {{.Name}}"><option value="viewer" {{if eq .Role "viewer"}}selected{{end}}>read-only</option><option value="admin" {{if eq .Role "admin"}}selected{{end}}>admin</option></select>
+        <input name="password" type="password" minlength="8" placeholder="new password (optional)" aria-label="New password for {{.Name}}" autocomplete="new-password">
         <button>Save</button>
       </form>
     </td>
@@ -20,7 +20,7 @@
   </tr>
   {{end}}
   </tbody>
-</table>
+</table></div>
 <h2>New user</h2>
 <form method="post" action="/users" class="card form inline-form">
   <label>Name <input name="name" required autocomplete="off"></label>
@@ -30,12 +30,12 @@
   <div class="buttons"><button class="primary">Add user</button></div>
 </form>
 
-<h1 id="tokens">API tokens</h1>
+<h2 id="tokens">API tokens</h2>
 <p class="muted">For scripts and automation: <code>curl -H "Authorization: Bearer zx_…" http://this-host:9116/api/v1/devices</code>. See the README for all calls. A read-only token can only read.</p>
 {{with .NewToken}}
 <div class="flash ok">Token <b>{{$.NewTokenName}}</b> created. Copy it now, it is not shown again:<br><code class="token">{{.}}</code></div>
 {{end}}
-<table class="list">
+<div class="table-wrap"><table class="list">
   <thead><tr><th>Name</th><th>Role</th><th>Created by</th><th>Created</th><th>Last used</th><th></th></tr></thead>
   <tbody>
   {{range .Tokens}}
@@ -51,7 +51,7 @@
   <tr><td colspan="6" class="empty">No tokens.</td></tr>
   {{end}}
   </tbody>
-</table>
+</table></div>
 <form method="post" action="/tokens" class="card form inline-form">
   <label>Name <input name="name" required placeholder="e.g. ansible" autocomplete="off"></label>
   <label>Role <select name="role"><option value="viewer">read-only</option><option value="admin">admin</option></select></label>

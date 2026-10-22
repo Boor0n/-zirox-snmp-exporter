@@ -16,12 +16,12 @@
     static_configs:
       - targets: ['{{.Host}}']</pre>
 <h2>Endpoints</h2>
-<table class="list">
+<div class="table-wrap"><table class="list">
 <tr><td><a href="/sd" target="_blank">/sd</a></td><td>target list for HTTP SD (JSON)</td></tr>
 <tr><td><code>/probe?target=&lt;id|name|IP&gt;</code></td><td>metrics of one device</td></tr>
 <tr><td><a href="/metrics/all" target="_blank">/metrics/all</a></td><td>all devices in one response, with device and group labels</td></tr>
 <tr><td><a href="/metrics" target="_blank">/metrics</a></td><td>health of the exporter itself</td></tr>
-</table>
+</table></div>
 <h2>Example Grafana queries</h2>
 <pre class="code">rate(ifHCInOctets{device="core-nx-01"}[5m]) * 8          # inbound traffic, bit/s
 rate(ifInErrors[5m]) > 0                                   # ports with errors

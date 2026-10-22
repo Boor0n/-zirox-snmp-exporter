@@ -188,9 +188,10 @@ var funcs = template.FuncMap{
 		}
 		return fmt.Sprintf("%d ms", d.Milliseconds())
 	},
-	"secs":  func(d time.Duration) int { return int(d.Seconds()) },
-	"list":  func(v ...string) []string { return v },
-	"speed": speedText,
+	"secs":      func(d time.Duration) int { return int(d.Seconds()) },
+	"list":      func(v ...string) []string { return v },
+	"hasPrefix": strings.HasPrefix,
+	"speed":     speedText,
 	"iftype": func(t int) string {
 		if n, ok := ifTypeNames[t]; ok {
 			return n
@@ -639,6 +640,7 @@ type ObjectGroup struct {
 	Category string
 	Objects  []store.Object
 	Selected int
+	HasDescr bool // false hides the empty Description column
 }
 
 func (s *Server) deviceCard(w http.ResponseWriter, r *http.Request) {
@@ -662,6 +664,9 @@ func (s *Server) deviceCard(w http.ResponseWriter, r *http.Request) {
 			byCat[cat] = g
 		}
 		g.Objects = append(g.Objects, o)
+		if o.Alias != "" || (o.Descr != "" && o.Descr != o.Name) {
+			g.HasDescr = true
+		}
 		if o.Selected && o.State != store.StateMissing {
 			g.Selected++
 		}

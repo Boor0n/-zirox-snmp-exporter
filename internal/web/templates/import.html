@@ -3,10 +3,10 @@
 {{with .Error}}<div class="flash err">{{.}}</div>{{end}}
 {{if .Results}}
 <div class="flash ok">Added: {{.Imported}} of {{len .Results}}. Full discovery of new devices runs in the background (at most 8 at a time).</div>
-<table class="list">
+<div class="table-wrap"><table class="list">
   <thead><tr><th>Line</th><th>Device</th><th>Result</th></tr></thead>
   <tbody>{{range .Results}}<tr class="{{if not .OK}}errrow{{end}}"><td>{{.Line}}</td><td>{{.Name}}</td><td>{{.Msg}}</td></tr>{{end}}</tbody>
-</table>
+</table></div>
 {{end}}
 <form method="post" action="/import" enctype="multipart/form-data" class="card form">
   <p>The first line is a header. Required column: <code>address</code>. Optional:

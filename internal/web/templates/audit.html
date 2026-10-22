@@ -7,7 +7,7 @@
   <input name="q" value="{{.Q}}" placeholder="Search: user, action, device, details">
   <button>Search</button>
 </form>
-<table class="list">
+<div class="table-wrap"><table class="list">
   <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Object</th><th>Details</th></tr></thead>
   <tbody>
   {{range .Entries}}
@@ -22,5 +22,5 @@
   <tr><td colspan="5" class="empty">Nothing yet.</td></tr>
   {{end}}
   </tbody>
-</table>
+</table></div>
 {{end}}
