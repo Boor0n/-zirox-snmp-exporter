@@ -18,7 +18,7 @@ import (
 	"github.com/Boor0n/zirox-snmp-exporter/internal/store"
 )
 
-// TestScale imports many 48-port switches with simulated network latency,
+// TestScale imports many switches (48 ports, or ZIROX_SCALE_PORTS) with simulated network latency,
 // discovers them all and checks every device is polled within its interval.
 // It runs with ZIROX_SCALE=<devices> (CI uses a small number).
 func TestScale(t *testing.T) {
@@ -29,6 +29,10 @@ func TestScale(t *testing.T) {
 	delay := 20 * time.Millisecond
 	if v := os.Getenv("ZIROX_SCALE_DELAY"); v != "" {
 		delay, _ = time.ParseDuration(v)
+	}
+	ports := 48
+	if v, _ := strconv.Atoi(os.Getenv("ZIROX_SCALE_PORTS")); v > 0 {
+		ports = v
 	}
 	interval := 10 // seconds
 
@@ -58,7 +62,7 @@ func TestScale(t *testing.T) {
 	var ids []int64
 	for i := 0; i < n; i++ {
 		addr := fmt.Sprintf("10.%d.%d.%d", i/65536, i/256%256, i%256)
-		a := snmptest.Switch(48)
+		a := snmptest.Switch(ports)
 		a.Delay = delay
 		agents[addr] = a
 		d := store.Device{Name: "sw-" + addr, Address: addr, Port: 161, CredentialID: c.ID, Enabled: true}
@@ -67,6 +71,12 @@ func TestScale(t *testing.T) {
 		}
 		ids = append(ids, d.ID)
 	}
+	// The simulated agents live in this process too; measure them first so
+	// the report shows the memory of Zirox alone.
+	var ms runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&ms)
+	agentHeap := ms.HeapAlloc
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() { cancel(); e.Wait() }()
 	if err := e.Start(ctx); err != nil {
@@ -110,13 +120,21 @@ func TestScale(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	cycle := time.Since(mark)
-	var ms runtime.MemStats
+	samples := 0
+	var slowest time.Duration
+	for _, id := range ids {
+		if s := e.Snapshot(id); s != nil {
+			samples += len(s.Samples)
+			slowest = max(slowest, s.Duration)
+		}
+	}
 	runtime.GC()
 	runtime.ReadMemStats(&ms)
 	t.Logf("%d devices, %d objects (%d selected), %v latency per request", n, objects, selected, delay)
 	t.Logf("discovery of all devices: %v (%d at a time)", discovery.Round(time.Millisecond), e.MaxConcurrentDiscovery())
 	t.Logf("all devices polled again within %v (interval %d s)", cycle.Round(time.Millisecond), interval)
-	t.Logf("goroutines %d, heap %d MB", runtime.NumGoroutine(), ms.HeapAlloc>>20)
+	t.Logf("%d samples exported per cycle, slowest device poll %v", samples, slowest.Round(time.Millisecond))
+	t.Logf("goroutines %d, Zirox heap %d MB (simulated agents %d MB more)", runtime.NumGoroutine(), (ms.HeapAlloc-agentHeap)>>20, agentHeap>>20)
 	if len(late) > 0 {
 		t.Fatalf("%d of %d devices not polled within the interval", len(late), n)
 	}
