@@ -106,8 +106,8 @@ func run(log *slog.Logger) error {
 	defer stop()
 
 	en := engine.New(st, box, engine.Options{
-		MaxConcurrentPolls:     envInt("ZIROX_MAX_POLLS", 64),
-		MaxConcurrentDiscovery: envInt("ZIROX_MAX_DISCOVERY", 8),
+		MaxConcurrentPolls:     envInt("ZIROX_MAX_POLLS", 128),
+		MaxConcurrentDiscovery: envInt("ZIROX_MAX_DISCOVERY", 32),
 		Log:                    log,
 	})
 	if err := en.Start(ctx); err != nil {
