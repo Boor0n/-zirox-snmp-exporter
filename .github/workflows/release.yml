@@ -20,6 +20,8 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test ./...
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
       - name: Build archives
         env:
           VERSION: ${{ inputs.version || github.ref_name }}
@@ -32,9 +34,19 @@ jobs:
             mkdir -p "$d"
             CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=${ver}" -o "$d/zirox" ./cmd/zirox
             cp deploy/install.sh deploy/zirox.service deploy/prometheus.yml deploy/alerts.yml deploy/grafana-dashboard.json README.md "$d/"
+            cp deploy/get.sh "$d/"
             tar -czf "dist/$d.tar.gz" "$d"
+            mkdir -p dist-bin && cp "$d/zirox" "dist-bin/zirox-linux-$arch"
+          done
+          # Docker images as release assets, loaded by deploy/get.sh with
+          # "docker load", so no registry login is needed.
+          for arch in amd64 arm64; do
+            docker buildx build --platform "linux/$arch" -f deploy/Dockerfile.release \
+              -t "zirox-snmp-exporter:${ver}" --output "type=docker,dest=dist-bin/image-$arch.tar" dist-bin
+            gzip -c "dist-bin/image-$arch.tar" > "dist/zirox-image-${ver}-linux-${arch}.tar.gz"
           done
           (cd dist && sha256sum *.tar.gz > SHA256SUMS)
+          ls -l dist
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}

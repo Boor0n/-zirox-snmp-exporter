@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gosnmp/gosnmp"
 )
@@ -16,9 +17,10 @@ type Agent struct {
 	vals    map[string]gosnmp.SnmpPDU
 	Down    bool
 	Ver     string
-	Gets    int // number of GET calls
-	Walks   int // number of walk calls
-	GotOIDs int // total OIDs requested by GET
+	Gets    int           // number of GET calls
+	Walks   int           // number of walk calls
+	Delay   time.Duration // simulated network round trip per Get or Walk
+	GotOIDs int           // total OIDs requested by GET
 }
 
 // New returns an empty agent speaking SNMP v2c.
@@ -71,6 +73,7 @@ func (s *Session) Close()          {}
 
 func (s *Session) Walk(root string) ([]gosnmp.SnmpPDU, error) {
 	a := s.A
+	time.Sleep(a.Delay)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.Down {
@@ -93,6 +96,7 @@ func (s *Session) Walk(root string) ([]gosnmp.SnmpPDU, error) {
 
 func (s *Session) Get(oids []string) ([]gosnmp.SnmpPDU, error) {
 	a := s.A
+	time.Sleep(a.Delay)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.Down {

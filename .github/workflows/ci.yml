@@ -25,6 +25,7 @@ jobs:
       - run: go test -race ./...
         env:
           ZIROX_TEST_SNMP: 127.0.0.1:1161
+          ZIROX_SCALE: 300
       - run: docker build -t zirox-snmp-exporter:ci .
       - name: Check Prometheus alert rules and Grafana dashboard
         run: |
@@ -34,3 +35,4 @@ jobs:
           /tmp/promtool test rules deploy/alerts_test.yml
           jq -e '.panels | length > 0' deploy/grafana-dashboard.json
           sh -n deploy/install.sh
+          sh -n deploy/get.sh

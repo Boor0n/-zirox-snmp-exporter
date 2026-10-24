@@ -83,11 +83,13 @@ type Engine struct {
 
 // New creates an engine. Call Start to begin polling.
 func New(st *store.Store, box *secret.Box, o Options) *Engine {
+	// Sized for about a thousand devices; each limit only caps work running
+	// at the same moment, never the number of devices.
 	if o.MaxConcurrentPolls <= 0 {
-		o.MaxConcurrentPolls = 64
+		o.MaxConcurrentPolls = 128
 	}
 	if o.MaxConcurrentDiscovery <= 0 {
-		o.MaxConcurrentDiscovery = 8
+		o.MaxConcurrentDiscovery = 32
 	}
 	if o.Dial == nil {
 		o.Dial = snmpx.Dial
