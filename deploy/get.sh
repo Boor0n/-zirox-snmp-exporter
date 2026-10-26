@@ -165,9 +165,15 @@ if [ "$mode" = docker ]; then
 		upgrade=true
 		docker rm -f "$CONTAINER" >/dev/null
 	fi
+	# On SELinux hosts (RHEL, Rocky, Alma) the data directory needs a
+	# container label, otherwise Zirox cannot write its database.
+	vol=$DATA_DIR:/data
+	if command -v getenforce >/dev/null && [ "$(getenforce 2>/dev/null)" != Disabled ]; then
+		vol=$vol:Z
+	fi
 	docker run -d --name "$CONTAINER" --restart unless-stopped \
 		-p "$port:9116" --env-file "$ENV_FILE" -e ZIROX_LISTEN=:9116 \
-		-v "$DATA_DIR:/data" "$IMAGE:$tag" >/dev/null
+		-v "$vol" "$IMAGE:$tag" >/dev/null
 	logs="docker logs -f $CONTAINER"
 else
 	if docker_ok && docker inspect "$CONTAINER" >/dev/null 2>&1; then
