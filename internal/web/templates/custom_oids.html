@@ -39,7 +39,7 @@
   <label class="check"><input type="checkbox" name="walk" value="1" {{if .CheckWalk}}checked{{end}}> Walk</label>
   <div class="buttons"><button>Check</button></div>
 </form>
-{{with .CheckErr}}<div class="flash err">{{.}}</div>{{end}}
+{{with .CheckErr}}<div class="flash err" role="alert">{{.}}</div>{{end}}
 {{if .Rows}}
 <div class="table-wrap"><table class="list">
   <thead><tr><th>OID</th><th>Type</th><th>Value</th><th></th></tr></thead>
@@ -59,7 +59,7 @@
 
 {{if .CanEdit}}
 <h2 id="form">{{if .Edit.ID}}Edit {{.Edit.Name}}{{else}}New custom OID{{end}}</h2>
-{{with .FormErr}}<div class="flash err">{{.}}</div>{{end}}
+{{with .FormErr}}<div class="flash err" role="alert">{{.}}</div>{{end}}
 <form method="post" action="/custom-oids" class="card form">
   <input type="hidden" name="id" value="{{.Edit.ID}}">
   <label>OID <input name="oid" value="{{.Edit.OID}}" required placeholder="1.3.6.1.4.1.9.9.48.1.1.1.5" spellcheck="false"></label>

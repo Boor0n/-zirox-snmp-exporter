@@ -1,17 +1,17 @@
 {{define "content"}}
 {{$d := .Device}}
 <h1>{{if $d.ID}}Edit {{$d.Name}}{{else}}New device{{end}}</h1>
-{{with .Error}}<div class="flash err">{{.}}</div>{{end}}
-{{with .TestOK}}<div class="flash ok">{{.}}</div>{{end}}
+{{with .Error}}<div class="flash err" role="alert">{{.}}</div>{{end}}
+{{with .TestOK}}<div class="flash ok" role="status">{{.}}</div>{{end}}
 <form method="post" action="{{if $d.ID}}/devices/{{$d.ID}}/edit{{else}}/devices/new{{end}}" class="card form">
   <input type="hidden" name="id" value="{{$d.ID}}">
   <fieldset>
     <legend>Device</legend>
-    <label>IP address or DNS name <input name="address" value="{{$d.Address}}" required placeholder="10.0.0.1"></label>
-    <label>Name <input name="name" value="{{$d.Name}}" placeholder="defaults to the address"></label>
-    <label>SNMP port <input name="port" type="number" min="1" max="65535" value="{{$d.Port}}"></label>
+    <label>IP address or DNS name <input name="address" value="{{$d.Address}}" required placeholder="10.0.0.1" spellcheck="false" autocapitalize="off"></label>
+    <label>Name <input name="name" value="{{$d.Name}}" aria-describedby="name-hint"><small class="hint" id="name-hint">Shown in the list and as the <code>device</code> label in Prometheus. Empty = the address.</small></label>
+    <label>SNMP port <input name="port" type="number" min="1" max="65535" value="{{$d.Port}}" class="short"></label>
     <label>Group / site <input name="group" value="{{$d.Group}}" placeholder="e.g. DC1-core"></label>
-    <label class="check"><input type="checkbox" name="enabled" {{if $d.Enabled}}checked{{end}}> Poll this device</label>
+    <label class="check"><input type="checkbox" name="enabled" {{if $d.Enabled}}checked{{end}}> Poll this device <span class="muted small">(untick to pause polling without deleting)</span></label>
   </fieldset>
 
   <fieldset>
@@ -24,7 +24,7 @@
     </label>
     <div id="cred-new" class="sub">
       {{template "credfields" .Cred}}
-      <p class="muted small">If identical credentials are already saved, they are reused.</p>
+      <p class="muted small">If the same credentials are already saved, Zirox reuses them instead of making a copy.</p>
     </div>
   </fieldset>
 
@@ -37,9 +37,9 @@
       </select>
     </label>
     <label>Custom interval for this device, s
-      <input name="interval_sec" type="number" min="0" value="{{if $d.IntervalSec}}{{$d.IntervalSec}}{{end}}" placeholder="empty = from profile">
+      <input name="interval_sec" type="number" min="0" value="{{if $d.IntervalSec}}{{$d.IntervalSec}}{{end}}" aria-describedby="interval-hint">
+      <small class="hint" id="interval-hint">Leave empty to use the profile. This device's interval wins over the profile, the profile over the global setting. Minimum 5 s.</small>
     </label>
-    <p class="muted small">Priority: device interval → profile → global. Minimum 5 s.</p>
   </fieldset>
 
   <div class="buttons">
@@ -50,7 +50,7 @@
 </form>
 {{if $d.ID}}
 <form method="post" action="/devices/{{$d.ID}}/delete" class="danger-zone">
-  <button class="danger" data-confirm="Delete device {{$d.Name}}?">Delete device</button>
+  <button class="danger" data-confirm="Delete device {{$d.Name}}? Its settings and ticked ports are removed; Prometheus stops receiving its metrics.">Delete device</button>
 </form>
 {{end}}
 {{end}}
