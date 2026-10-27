@@ -3,13 +3,13 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/deploy/get.sh | sudo sh
 #
-# Private repository: pass a GitHub token that can read it, both to curl and
-# to the script:
+# Behind a proxy, give it to curl (-x) and to the script (https_proxy=...).
+#
+# Private fork: pass a token that can read it, and fetch the script through
+# the API (raw.githubusercontent.com answers 404 for fine-grained tokens):
 #
 #   curl -fsSL -H "Authorization: Bearer $T" -H "Accept: application/vnd.github.raw" \
-#     https://api.github.com/repos/Boor0n/-zirox-snmp-exporter/contents/deploy/get.sh | sudo GITHUB_TOKEN=$T sh
-#
-# Behind a proxy, give it to curl (-x) and to the script (https_proxy=...).
+#     https://api.github.com/repos/OWNER/REPO/contents/deploy/get.sh | sudo GITHUB_TOKEN=$T ZIROX_REPO=OWNER/REPO sh
 #
 # Options (after "sh -s --", e.g. "| sudo sh -s -- --systemd"):
 #   --docker            run in Docker (default when Docker is running)
