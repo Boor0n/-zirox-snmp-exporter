@@ -53,6 +53,7 @@ The script downloads the latest release, verifies its SHA256, loads the image in
   - `--systemd` install the binary as a systemd service instead of Docker (the default when Docker is not running);
   - `--version v0.3.0` a specific release instead of the latest;
   - `--port N` port of the web UI and `/probe` (default 9116);
+  - `--host-network` run the container on the host's network, so SNMP leaves exactly as from the host. Use it when devices answer the host but discovery fails with "no route to host" (firewalld or routing rules that do not cover Docker's bridge network); `--bridge-network` switches back. The choice is kept on upgrades;
   - `--uninstall` remove the container or the service; data is kept.
 
 ### Docker from source
