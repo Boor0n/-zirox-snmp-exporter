@@ -2,6 +2,8 @@
 
 An SNMP exporter for Prometheus with a web UI. You add devices in the browser. When a device is added, it is walked **once in full** to find its ports, CPU, memory, temperature sensors, power supplies and fans. After that only the **ticked** objects are polled on schedule, with targeted SNMP GETs and no walks. Prometheus reads the values from the exporter's memory and never talks to the devices.
 
+**Quick start:** see [Install](#install), six steps from an empty Linux server to metrics in Prometheus.
+
 ## How it works
 
 1. **Add / Refresh.** A full walk of `ifTable`/`ifXTable`, CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-SYSTEM-EXT-MIB (Nexus), ENTITY-SENSOR-MIB, CISCO-ENVMON-MIB, HOST-RESOURCES-MIB, UCD-SNMP-MIB, CISCO-FIREWALL-MIB and CISCO-REMOTE-ACCESS-MONITOR-MIB (ASA), and BGP4-MIB.
@@ -23,40 +25,120 @@ Changes apply immediately, without a restart. The minimum is 5 s. If a device do
 
 ## Install
 
-### One command
+Step by step, from an empty Linux server to metrics in Prometheus. Steps 1–4 take about five minutes.
 
-On a Linux server with Docker (without Docker it installs a systemd service instead):
+### 1. Prerequisites
+
+- A Linux server (x86-64 or ARM64; tested on RHEL/Rocky/Alma, Ubuntu, Debian) with `curl`, `tar` and root access via `sudo`.
+- **Docker** installed and running (`docker info` works). Without Docker the installer sets up a systemd service instead.
+- Network access from the server to your devices on **UDP 161** (SNMP), and from your browser and Prometheus to the server on **TCP 9116** (or the port you choose).
+- Internet access to `github.com` and `api.github.com`, directly or through an HTTP proxy. No GitHub account or token is needed: the repository is public.
+
+### 2. Run the installer
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/deploy/get.sh | sudo sh
 ```
 
-Behind a proxy, give it to both `curl` and the script (Docker downloads nothing during the install; the image comes as a file):
+**Behind a proxy**, pass it to `curl` with `-x` and to the script with `https_proxy` (the script downloads the release itself):
 
 ```bash
-P=http://proxy:8080
+P=http://proxy.example.com:8080
 curl -fsSL -x "$P" https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/deploy/get.sh | sudo https_proxy=$P sh
 ```
 
-From a private fork, create a fine-grained GitHub token with Contents: Read-only on that repository and fetch the script through the API (raw.githubusercontent.com answers 404 for fine-grained tokens on private repositories):
+The script downloads the latest release, verifies its SHA256, loads the image into Docker and starts the `zirox` container (`--restart unless-stopped`), waits for the web UI and prints something like:
 
-```bash
-T=github_pat_...
-curl -fsSL -H "Authorization: Bearer $T" -H "Accept: application/vnd.github.raw" \
-  https://api.github.com/repos/OWNER/REPO/contents/deploy/get.sh | sudo GITHUB_TOKEN=$T ZIROX_REPO=OWNER/REPO sh
+```
+==> Installed v0.4.0 (docker).
+    Web UI:     http://server.example.com:9116
+    Login:      admin / Xk3...  (saved in /etc/zirox/zirox.env)
+    Prometheus: http://server.example.com:9116/sd (HTTP service discovery)
 ```
 
-The script downloads the latest release, verifies its SHA256, loads the image into Docker and starts the `zirox` container (`--restart unless-stopped`), waits for the web UI and prints its address and the admin password. Data lives in `/var/lib/zirox`, settings in `/etc/zirox/zirox.env`. On SELinux hosts (RHEL, Rocky, Alma) the data directory is labelled for the container automatically.
+Data (database and encryption key) lives in `/var/lib/zirox`, settings in `/etc/zirox/zirox.env`. On SELinux hosts (RHEL, Rocky, Alma) the data directory is labelled for the container automatically.
 
-- Upgrade: run the same command again. The database, key and settings are kept.
-- Options go after `sh -s --`, e.g. `... | sudo sh -s -- --port 9200`:
-  - `--systemd` install the binary as a systemd service instead of Docker (the default when Docker is not running);
-  - `--version v0.3.0` a specific release instead of the latest;
-  - `--port N` port of the web UI and `/probe` (default 9116);
-  - `--host-network` run the container on the host's network, so SNMP leaves exactly as from the host. Use it when devices answer the host but discovery fails with "no route to host" (firewalld or routing rules that do not cover Docker's bridge network); `--bridge-network` switches back. The choice is kept on upgrades;
-  - `--uninstall` remove the container or the service; data is kept.
+#### Options
 
-### Docker from source
+Options go after `sh -s --`, for example:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/deploy/get.sh | sudo sh -s -- --port 9117 --host-network
+```
+
+| Option | What it does |
+| --- | --- |
+| `--port N` | Port of the web UI, `/sd` and `/probe` (default 9116). Use another one if 9116 is taken, e.g. by the standard snmp_exporter; the installer tells you when it is. |
+| `--host-network` | Run the container on the host's network, so SNMP leaves exactly as from the host. Use it when the host reaches the devices but discovery in Zirox fails with "no route to host" or timeouts (firewall or routing rules that do not cover Docker's bridge network). `--bridge-network` switches back. The choice is kept on upgrades. |
+| `--systemd` | Install the binary as a systemd service instead of Docker (the default when Docker is not running). |
+| `--version vX.Y.Z` | Install a specific release instead of the latest, e.g. to roll back. |
+| `--uninstall` | Remove the container or the service. Data and settings are kept. |
+
+**Upgrade:** run the same command again. The database, key, settings, port and network mode are kept.
+
+### 3. First login
+
+Open `http://<server>:9116` and log in as `admin` with the password the installer printed. If you missed it:
+
+```bash
+sudo grep ADMIN_PASSWORD /etc/zirox/zirox.env
+```
+
+This password is used only on the first start; change it later in **Settings**. To reset a forgotten admin password:
+
+```bash
+sudo vi /etc/zirox/zirox.env
+#   set   ZIROX_ADMIN_PASSWORD=<new password>
+#   add   ZIROX_RESET_ADMIN_PASSWORD=1
+curl -fsSL https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/deploy/get.sh | sudo sh   # recreates the container with the new settings
+```
+
+Log in with the new password, then remove the `ZIROX_RESET_ADMIN_PASSWORD=1` line and run the installer once more, otherwise the password is reset on every restart. With `--systemd`, `sudo systemctl restart zirox` is enough instead of the installer.
+
+### 4. Add SNMP credentials
+
+**Credentials → New**: give it a name (e.g. `Nexus RO v2c`), pick the SNMP version and enter the community (v1/v2c) or the user, auth and privacy settings (v3). Credentials are stored encrypted and reused by many devices, so you enter a community only once.
+
+### 5. Add a device
+
+**Devices → Add device**: enter the IP address or DNS name, a name (it becomes the `device` label in Prometheus), an optional group/site, the credentials and a poll profile.
+
+1. Click **Test connection** first. It reads `sysName` and `sysDescr` and shows the device's answer or the error.
+2. Click **Add and discover**. Zirox walks the device once and lists its ports, CPU, memory, sensors, PSUs and fans.
+3. On the device page tick what you want polled and save. Up ports and health objects are ticked by default, down ports are not.
+
+Many devices at once: **Import** takes a CSV (see "CSV import" below).
+
+### 6. Connect Prometheus
+
+Add a job to `prometheus.yml` and reload Prometheus:
+
+```yaml
+scrape_configs:
+  - job_name: zirox-snmp
+    http_sd_configs:
+      - url: http://<zirox-server>:9116/sd
+        refresh_interval: 60s
+```
+
+Prometheus gets every device as a separate target, with its own poll interval. New devices appear without editing the config. Check **Status → Targets** in Prometheus: the `zirox-snmp` targets should be UP. The **Prometheus** page in the Zirox UI shows the same config with your server's address filled in. More in the "Prometheus" section below.
+
+Optionally import `deploy/grafana-dashboard.json` into Grafana and add `deploy/alerts.yml` to Prometheus (see "Grafana" and "Alerts").
+
+### Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Installer: "port 9116 is already in use" | Another exporter (often the standard snmp_exporter) uses it. Add `--port 9117`, or stop the other one. |
+| Installer: "cannot read releases" / download fails | No internet from the server. Use the proxy form of the command from step 2. |
+| Web UI does not open from your PC, but `curl http://127.0.0.1:9116/healthz` on the server answers `ok` | A host firewall blocks the port: `sudo firewall-cmd --add-port=9116/tcp --permanent && sudo firewall-cmd --reload` (or open it in `ufw`/iptables). |
+| Test connection: timeout | Check from the server itself: `snmpget -v2c -c <community> <device-ip> 1.3.6.1.2.1.1.5.0` (package `net-snmp-utils` or `snmp`). If it times out too, the problem is outside Zirox: UDP 161 blocked on the way, the device's SNMP ACL does not allow the server's IP, a wrong community, or SNMP not enabled on the device. |
+| `snmpget` from the host works, Zirox gets "no route to host" or timeouts | Docker's bridge network is not allowed out. Reinstall with `--host-network`. |
+| Some ports or sensors are missing | The SNMP view on the device may hide them. Check with `snmpwalk -v2c -c <community> <device-ip> 1.3.6.1.2.1.31.1.1.1.1` (ifName), then click **Refresh** on the device. |
+| Prometheus target is DOWN | Prometheus cannot reach the server on the Zirox port, or `ZIROX_SCRAPE_TOKEN` is set and Prometheus does not send it. |
+| Anything else | Logs: `sudo docker logs zirox` (Docker) or `sudo journalctl -u zirox` (systemd). |
+
+### Alternative: Docker from source
 
 ```bash
 docker compose up -d --build
@@ -65,7 +147,7 @@ docker logs zirox   # if ZIROX_ADMIN_PASSWORD is empty, the generated admin pass
 
 Open `http://<server>:9116`.
 
-### Without Docker (systemd)
+### Alternative: release archive without Docker (systemd)
 
 Download `zirox-<version>-linux-amd64.tar.gz` from the Releases page (`linux-arm64` for ARM servers), then:
 
