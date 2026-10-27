@@ -243,6 +243,9 @@ fi
 echo "    Web UI:     http://$host:$port"
 if [ -n "$password" ]; then
 	echo "    Login:      admin / $password  (saved in $ENV_FILE)"
+elif ! $upgrade; then
+	# The settings file is left from an earlier attempt: point to the password.
+	echo "    Login:      admin, password: grep ADMIN_PASSWORD $ENV_FILE"
 fi
 echo "    Prometheus: http://$host:$port/sd (HTTP service discovery)"
 echo "    Logs:       $logs"
