@@ -38,7 +38,7 @@ while [ $# -gt 0 ]; do
 	--version) version=${2:?--version needs a value}; shift 2 ;;
 	--port) port=${2:?--port needs a value}; shift 2 ;;
 	--uninstall) uninstall=true; shift ;;
-	-h|--help) sed -n '2,20p' "$0" 2>/dev/null || echo "see deploy/get.sh in $REPO"; exit 0 ;;
+	-h|--help) sed -n '2,22p' "$0" 2>/dev/null || echo "see deploy/get.sh in $REPO"; exit 0 ;;
 	*) echo "error: unknown option $1" >&2; exit 1 ;;
 	esac
 done
