@@ -16,6 +16,9 @@
 #   --systemd           install the binary as a systemd service
 #   --version vX.Y.Z    install this release instead of the latest
 #   --port N            web UI and /probe port (default 9116)
+#   --host-network      Docker: use the host's network, so SNMP goes out
+#                       exactly like from the host (firewalld, routing)
+#   --bridge-network    Docker: back to the default bridge network
 #   --uninstall         remove the container and the service, keep the data
 #
 # Data (database and encryption key) is kept in /var/lib/zirox and settings in
@@ -30,15 +33,17 @@ ENV_DIR=/etc/zirox
 ENV_FILE=$ENV_DIR/zirox.env
 CONTAINER=zirox
 
-mode="" version="" port="" uninstall=false
+mode="" version="" port="" uninstall=false net=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--docker) mode=docker; shift ;;
 	--systemd) mode=systemd; shift ;;
 	--version) version=${2:?--version needs a value}; shift 2 ;;
 	--port) port=${2:?--port needs a value}; shift 2 ;;
+	--host-network) net=host; mode=docker; shift ;;
+	--bridge-network) net=bridge; mode=docker; shift ;;
 	--uninstall) uninstall=true; shift ;;
-	-h|--help) sed -n '2,22p' "$0" 2>/dev/null || echo "see deploy/get.sh in $REPO"; exit 0 ;;
+	-h|--help) sed -n '2,25p' "$0" 2>/dev/null || echo "see deploy/get.sh in $REPO"; exit 0 ;;
 	*) echo "error: unknown option $1" >&2; exit 1 ;;
 	esac
 done
@@ -89,10 +94,21 @@ esac
 if [ -z "$port" ]; then
 	if [ "$mode" = docker ] && docker inspect "$CONTAINER" >/dev/null 2>&1; then
 		port=$(docker port "$CONTAINER" 9116/tcp 2>/dev/null | sed -n '1s/.*://p')
+		if [ -z "$port" ]; then # host network: the port is in ZIROX_LISTEN
+			port=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER" |
+				sed -n 's/^ZIROX_LISTEN=.*:\([0-9]*\)$/\1/p')
+		fi
 	elif [ "$mode" = systemd ] && [ -f "$ENV_FILE" ]; then
 		port=$(sed -n 's/^ZIROX_LISTEN=.*:\([0-9]*\)$/\1/p' "$ENV_FILE")
 	fi
 	port=${port:-9116}
+fi
+
+# Without --host-network/--bridge-network keep the network of an existing
+# container.
+if [ "$mode" = docker ] && [ -z "$net" ]; then
+	net=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$CONTAINER" 2>/dev/null || true)
+	[ "$net" = host ] || net=bridge
 fi
 
 case "$(uname -m)" in
@@ -197,8 +213,14 @@ if [ "$mode" = docker ]; then
 	if command -v getenforce >/dev/null && [ "$(getenforce 2>/dev/null)" != Disabled ]; then
 		vol=$vol:Z
 	fi
+	if [ "$net" = host ]; then
+		netopts="--network host -e ZIROX_LISTEN=:$port"
+	else
+		netopts="-p $port:9116 -e ZIROX_LISTEN=:9116"
+	fi
+	# shellcheck disable=SC2086 # netopts is a list of options
 	if ! docker run -d --name "$CONTAINER" --restart unless-stopped \
-		-p "$port:9116" --env-file "$ENV_FILE" -e ZIROX_LISTEN=:9116 \
+		$netopts --env-file "$ENV_FILE" \
 		-v "$vol" "$IMAGE:$tag" >/dev/null; then
 		docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 		die "the container did not start; if port $port is taken, add --port $(free_port)"
