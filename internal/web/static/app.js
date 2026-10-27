@@ -45,6 +45,56 @@
     setTimeout(tick, 2000);
   });
 
+  // "/" jumps to the search box, as in many admin tools.
+  const hot = document.querySelector('[data-hotkey="/"]');
+  if (hot) document.addEventListener('keydown', (e) => {
+    if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target.closest('input:not([type=checkbox]):not([type=radio]), select, textarea')) return;
+    e.preventDefault(); hot.focus(); hot.select();
+  });
+
+  // Sortable tables: click a column header. Cells may carry the sort value in data-v.
+  $$('table[data-sortable]').forEach((table) => {
+    const heads = $$('th[data-sort]', table);
+    heads.forEach((th, n) => {
+      const col = Array.from(th.parentNode.children).indexOf(th);
+      const b = document.createElement('button');
+      b.type = 'button';
+      while (th.firstChild) b.appendChild(th.firstChild);
+      th.appendChild(b);
+      b.addEventListener('click', () => {
+        const dir = th.getAttribute('aria-sort') === 'ascending' ? 'descending' : 'ascending';
+        heads.forEach((h) => h.removeAttribute('aria-sort'));
+        th.setAttribute('aria-sort', dir);
+        const num = th.dataset.sort === 'num';
+        const val = (tr) => { const td = tr.children[col]; return td ? (td.dataset.v !== undefined ? td.dataset.v : td.textContent.trim()) : ''; };
+        const body = table.tBodies[0];
+        const rows = Array.from(body.rows).filter((tr) => !tr.querySelector('td.empty'));
+        rows.sort((x, y) => {
+          const a = val(x), c = val(y);
+          const r = num ? (Number(a) - Number(c)) : a.localeCompare(c, undefined, { numeric: true, sensitivity: 'base' });
+          return dir === 'ascending' ? r : -r;
+        });
+        rows.forEach((tr) => body.appendChild(tr));
+      });
+    });
+  });
+
+  // Device list: show how many devices are selected; bulk buttons only work with a selection.
+  const bulk = document.querySelector('[data-bulk]');
+  if (bulk) {
+    const count = bulk.querySelector('[data-bulk-count]');
+    const btns = $$('button', bulk);
+    const sync = () => {
+      const n = $$('input[name="ids"]:checked').length;
+      count.textContent = n ? n + ' selected:' : 'Select devices to:';
+      btns.forEach((b) => { b.disabled = !n; });
+      bulk.classList.toggle('active', n > 0);
+    };
+    document.addEventListener('change', (e) => { if (e.target.matches('input[name="ids"], [data-check-all]')) sync(); });
+    sync();
+  }
+
   // Device card: filters and bulk (un)checking of visible rows.
   const form = document.getElementById('sel');
   if (!form) return;
@@ -87,6 +137,41 @@
   function markDirty() { if (dirtyBadge) dirtyBadge.hidden = !isDirty(); }
   boxes.forEach((b) => b.addEventListener('change', markDirty));
   $$('[data-select-visible]', form).forEach((b) => b.addEventListener('click', markDirty));
+  // Live counters, row highlight, click-a-row and Shift+click ranges.
+  const selCount = form.querySelector('[data-sel-count]');
+  function counts() {
+    boxes.forEach((b) => b.closest('tr').classList.toggle('on', b.checked));
+    $$('table.objects', form).forEach((t) => {
+      const h = t.closest('.table-wrap').previousElementSibling;
+      const c = h && h.querySelector('[data-group-count]');
+      if (c) c.textContent = $$('input[name=obj]:checked', t).length;
+    });
+    if (selCount) {
+      const n = boxes.filter((b) => b.checked).length;
+      const changed = boxes.filter((b, i) => b.checked !== initial[i]).length;
+      selCount.textContent = n + ' selected' + (changed ? ', ' + changed + ' changed' : '');
+    }
+  }
+  form.addEventListener('change', counts);
+  $$('[data-select-visible]', form).forEach((b) => b.addEventListener('click', counts));
+  counts();
+  let last = null;
+  form.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr.obj');
+    if (!tr || e.target.closest('a, button, label')) return;
+    const box = tr.querySelector('input[name=obj]');
+    if (!box || box.disabled) return;
+    if (e.target !== box) box.checked = !box.checked;
+    if (e.shiftKey && last && last !== box) {
+      const vis = boxes.filter((b) => !b.closest('tr').hidden);
+      const i = vis.indexOf(last), j = vis.indexOf(box);
+      if (i >= 0 && j >= 0) vis.slice(Math.min(i, j), Math.max(i, j) + 1).forEach((b) => { b.checked = box.checked; });
+      document.getSelection().removeAllRanges();
+    }
+    last = box;
+    markDirty(); counts();
+  });
+
   form.addEventListener('submit', () => { submitting = true; });
   window.addEventListener('beforeunload', (e) => {
     if (!submitting && isDirty()) { e.preventDefault(); e.returnValue = ''; }

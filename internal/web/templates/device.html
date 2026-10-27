@@ -32,7 +32,7 @@
   <div class="card">
     <h3>Prometheus</h3>
     <div class="small">Metrics of this device:</div>
-    <a class="small" href="/probe?target={{$d.ID}}" target="_blank">/probe?target={{$d.ID}}</a>
+    <a class="small" href="/probe?target={{$d.ID}}" target="_blank" rel="noopener">/probe?target={{$d.ID}}</a>
   </div>
 </div>
 
@@ -44,6 +44,7 @@
 {{end}}
 
 {{if .Groups}}
+{{if .CanEdit}}<p class="muted small hint">Tick what Zirox should poll and press <b>Apply</b>. Click a row to tick it; Shift+click ticks a range.</p>{{end}}
 <form method="post" action="/devices/{{$d.ID}}/selection" id="sel">
   <div class="toolbar sticky">
     <input type="search" placeholder="Filter: name, description" aria-label="Filter objects" data-filter-text>
@@ -51,13 +52,14 @@
     <label class="check"><input type="checkbox" data-filter-phys> physical only</label>
     <label class="check"><input type="checkbox" data-filter-sel> selected only</label>
     <span class="spacer"></span>
+    <span class="muted small" aria-live="polite"><b data-sel-count></b></span>
     {{if .CanEdit}}<button type="button" data-select-visible="1">Select visible</button>
     <button type="button" data-select-visible="0">Clear visible</button>
     <span class="badge warn" data-dirty hidden>Unsaved changes</span>
     <button class="primary">Apply</button>{{end}}
   </div>
   {{range .Groups}}
-  <h2>{{.Category}} <span class="muted small">{{.Selected}} of {{len .Objects}} selected</span></h2>
+  <h2>{{.Category}} <span class="muted small"><span data-group-count>{{.Selected}}</span> of {{len .Objects}} selected</span></h2>
   <div class="table-wrap"><table class="list objects">
     <thead><tr>
       <th class="w1"><input type="checkbox" data-check-group aria-label="Select all {{.Category}}" {{if not $.CanEdit}}disabled{{end}}></th>
@@ -71,7 +73,7 @@
       <td><input type="checkbox" name="obj" value="{{.ID}}" aria-label="Poll {{.Name}}" {{if .Selected}}checked{{end}} {{if not $.CanEdit}}disabled{{end}}></td>
       <td><b>{{.Name}}</b>{{if eq .Kind "if"}} <span class="muted small">#{{.Idx}}</span>{{end}}</td>
       {{if $hd}}<td>{{.Alias}}{{if and .Alias (ne .Descr .Name)}} · {{end}}{{if ne .Descr .Name}}<span class="muted">{{.Descr}}</span>{{end}}</td>{{end}}
-      {{if eq .Kind "if"}}<td>{{iftype .IfType}}</td><td>{{speed .SpeedMbps}}</td><td><span class="oper o{{.OperStatus}}">{{oper .OperStatus}}</span></td>{{end}}
+      {{if eq .Kind "if"}}<td>{{iftype .IfType}}</td><td>{{speed .SpeedMbps}}</td><td><span class="oper o{{.OperStatus}}"><span class="dot" aria-hidden="true"></span>{{oper .OperStatus}}</span></td>{{end}}
       <td>{{if eq .State "new"}}<span class="badge new">new</span>{{else if eq .State "missing"}}<span class="badge bad">gone</span>{{end}}</td>
     </tr>
     {{end}}

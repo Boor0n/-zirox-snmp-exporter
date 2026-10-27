@@ -3,31 +3,32 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zirox SNMP Exporter</title>
+<title>{{if and .Device .Device.Name}}{{.Device.Name}} · {{else if .Title}}{{.Title}} · {{end}}Zirox SNMP</title>
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/app.js" defer></script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 {{if .User}}
 <header class="top">
   <a class="brand" href="/">Zirox SNMP</a>
-  <nav>
-    <a href="/" {{if or (eq .Page "devices") (eq .Page "device") (eq .Page "device_form")}}class="on"{{end}}>Devices</a>
-    <a href="/credentials" {{if or (eq .Page "credentials") (eq .Page "credential_form")}}class="on"{{end}}>Credentials</a>
-    <a href="/profiles" {{if eq .Page "profiles"}}class="on"{{end}}>Poll profiles</a>
-    {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on"{{end}}>Import</a>{{end}}
-    <a href="/custom-oids" {{if eq .Page "custom_oids"}}class="on"{{end}}>Custom OIDs</a>
-    <a href="/settings" {{if eq .Page "settings"}}class="on"{{end}}>Settings</a>
-    <a href="/prometheus" {{if eq .Page "prometheus"}}class="on"{{end}}>Prometheus</a>
-    <a href="/audit" {{if eq .Page "audit"}}class="on"{{end}}>Change log</a>
-    {{if .CanEdit}}<a href="/users" {{if eq .Page "users"}}class="on"{{end}}>Users</a>{{end}}
+  <nav aria-label="Main">
+    <a href="/" {{if or (eq .Page "devices") (eq .Page "device") (eq .Page "device_form")}}class="on" aria-current="page"{{end}}>Devices</a>
+    <a href="/credentials" {{if or (eq .Page "credentials") (eq .Page "credential_form")}}class="on" aria-current="page"{{end}}>Credentials</a>
+    <a href="/profiles" {{if eq .Page "profiles"}}class="on" aria-current="page"{{end}}>Poll profiles</a>
+    {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on" aria-current="page"{{end}}>Import</a>{{end}}
+    <a href="/custom-oids" {{if eq .Page "custom_oids"}}class="on" aria-current="page"{{end}}>Custom OIDs</a>
+    <a href="/settings" {{if eq .Page "settings"}}class="on" aria-current="page"{{end}}>Settings</a>
+    <a href="/prometheus" {{if eq .Page "prometheus"}}class="on" aria-current="page"{{end}}>Prometheus</a>
+    <a href="/audit" {{if eq .Page "audit"}}class="on" aria-current="page"{{end}}>Change log</a>
+    {{if .CanEdit}}<a href="/users" {{if eq .Page "users"}}class="on" aria-current="page"{{end}}>Users</a>{{end}}
   </nav>
   <form method="post" action="/logout" class="logout"><span>{{.User}}{{if not .CanEdit}} <span class="badge">read-only</span>{{end}}</span><button class="link">Log out</button></form>
 </header>
 {{end}}
-<main>
-{{with .Flash}}<div class="flash ok">{{.}}</div>{{end}}
-{{with .FlashErr}}<div class="flash err">{{.}}</div>{{end}}
+<main id="main">
+{{with .Flash}}<div class="flash ok" role="status">{{.}}</div>{{end}}
+{{with .FlashErr}}<div class="flash err" role="alert">{{.}}</div>{{end}}
 {{template "content" .}}
 </main>
 <footer>Zirox SNMP Exporter {{.Version}}</footer>

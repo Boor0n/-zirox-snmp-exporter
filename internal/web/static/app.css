@@ -1,12 +1,12 @@
 :root {
   --bg: #f6f7f9; --fg: #1d2330; --muted: #6b7280; --card: #fff; --line: #e3e6eb;
-  --accent: #2563eb; --on-accent: #fff; --ok: #15803d; --bad: #b91c1c; --warn: #b45309; --run: #7c3aed;
+  --accent: #2563eb; --on-accent: #fff; --ok: #166534; --field: #848e9c; --bad: #b91c1c; --warn: #b45309; --run: #7c3aed;
   --ok-bg: #e7f6ec; --bad-bg: #fde8e8; --warn-bg: #fef3c7; --run-bg: #efe9fe; --new-bg: #eef5ff;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #12151b; --fg: #e5e7eb; --muted: #9ca3af; --card: #1b2029; --line: #2c3340;
-    --accent: #60a5fa; --on-accent: #0b1220; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24; --run: #a78bfa;
+    --accent: #60a5fa; --on-accent: #0b1220; --ok: #4ade80; --field: #6b7585; --bad: #f87171; --warn: #fbbf24; --run: #a78bfa;
     --ok-bg: #12301f; --bad-bg: #3a1717; --warn-bg: #3a2d10; --run-bg: #2a2142; --new-bg: #172840;
   }
 }
@@ -42,7 +42,7 @@ button:disabled { opacity: .6; cursor: default; }
 .buttons { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 .bar .buttons { margin: 0; }
 .bar form { margin: 0; }
-input, select, textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); max-width: 100%; }
+input, select, textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--field); border-radius: 6px; background: var(--card); color: var(--fg); max-width: 100%; }
 textarea { width: 100%; font-family: ui-monospace, monospace; }
 .form label { display: block; margin: 8px 0; }
 .form label > input:not([type=checkbox]):not([type=radio]), .form label > select { display: block; width: 100%; max-width: 420px; margin-top: 3px; }
@@ -59,8 +59,12 @@ label.check { display: inline-flex; gap: 6px; align-items: center; }
 .flash.err { background: var(--bad-bg); color: var(--bad); }
 .flash.warn { background: var(--warn-bg); color: var(--warn); }
 .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.stat { padding: 4px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--fg); font-size: 13px; }
-.stat.ok { color: var(--ok); } .stat.bad { color: var(--bad); } .stat.run { color: var(--run); }
+.stat { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--fg); font-size: 13px; }
+.stat:hover { border-color: var(--accent); text-decoration: none; }
+.stat b { font-variant-numeric: tabular-nums; }
+.stat.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.stat.zero { color: var(--muted); }
+.stat.zero .dot { opacity: .4; }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
 .filters input[name=q] { flex: 1; min-width: 200px; max-width: 420px; }
 table.list { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
@@ -126,3 +130,63 @@ a:focus-visible, button:focus-visible, .btn:focus-visible, input:focus-visible, 
   button.link { min-height: 0; padding: 8px 0; }
 }
 label.check.option { display: flex; align-items: baseline; margin: 6px 0; }
+
+/* Accessibility helpers. */
+.skip { position: absolute; left: 8px; top: -40px; z-index: 10; padding: 6px 12px; background: var(--accent); color: var(--on-accent); border-radius: 6px; }
+.skip:focus { top: 8px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; vertical-align: middle; }
+::placeholder { color: var(--muted); opacity: .8; }
+.hint { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; max-width: 520px; }
+.form label > input.short:not([type=checkbox]) { max-width: 120px; }
+button.wide { width: 100%; margin-top: 4px; }
+.nowrap, .devname { white-space: nowrap; }
+td.nowrap { font-variant-numeric: tabular-nums; }
+
+/* Status colours: one dot style for the filter chips, the device rows and the ports. */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.st-ok .dot { background: var(--ok); }
+.st-failing .dot { background: var(--bad); }
+.st-discovering .dot { background: var(--run); }
+.st-pending .dot { background: var(--warn); }
+.st-disabled .dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
+/* A coloured edge on each device row, so failing devices stand out in a long list. */
+table.devices tbody tr > td:first-child { box-shadow: inset 3px 0 transparent; }
+table.devices tr.st-failing > td:first-child { box-shadow: inset 3px 0 var(--bad); }
+table.devices tr.st-discovering > td:first-child { box-shadow: inset 3px 0 var(--run); }
+table.devices tr.st-pending > td:first-child { box-shadow: inset 3px 0 var(--warn); }
+table.list tbody tr:hover > td { background: var(--new-bg); }
+table.list tbody tr:hover > td.empty { background: none; }
+
+/* Port status: up is green; down is grey, because unused ports are normally down. */
+.oper { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.oper .dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted); }
+.oper.o1 .dot { background: var(--ok); box-shadow: none; }
+.oper.o2, .oper.o7 { color: var(--muted); }
+tr.obj { cursor: pointer; }
+tr.obj.on > td { background: color-mix(in srgb, var(--accent) 6%, var(--card)); }
+
+/* Sortable columns. */
+th[data-sort] { padding: 0; }
+th[data-sort] button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 4px; width: 100%; padding: 7px 10px; cursor: pointer; }
+th[data-sort] button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+th[data-sort] button::after { content: "↕"; opacity: .35; font-size: 11px; }
+th[aria-sort=ascending] button::after { content: "↑"; opacity: 1; }
+th[aria-sort=descending] button::after { content: "↓"; opacity: 1; }
+
+/* Bulk actions stick to the bottom of the screen while devices are selected. */
+.bulk.active { position: sticky; bottom: 0; z-index: 2; padding: 10px 12px; margin: 10px -12px 0; background: var(--card); border-top: 1px solid var(--line); color: var(--fg); box-shadow: 0 -4px 12px rgb(0 0 0 / .06); }
+.bulk.active [data-bulk-count] { font-weight: 600; }
+.hint + form .toolbar { padding-top: 4px; }
+p.hint { margin: 0 0 4px; max-width: none; }
+@media (max-width: 760px) {
+  .filters input[name=q] { min-width: 0; flex: 1 1 100%; max-width: none; }
+  .filters select { flex: 1; }
+  .stat { white-space: nowrap; }
+  /* Refresh stays on the device card and in the bulk bar; the row keeps Edit so the table fits. */
+  table.devices td.actions button.link { display: none; }
+  table.devices .errtext { max-width: 140px; }
+  table.list th, table.list td { padding: 7px 6px; }
+  th[data-sort] button { padding: 7px 6px; }
+  .toolbar input[type=search] { min-width: 0; flex: 1 1 100%; }
+}

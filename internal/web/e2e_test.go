@@ -176,6 +176,14 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}
 
+	if !strings.Contains(card, "<title>core-nx-01 · Zirox SNMP</title>") || !strings.Contains(card, "data-sel-count") {
+		t.Error("device card lacks its tab title or the live selection counter")
+	}
+	if _, list := e.get("/?status=ok"); !strings.Contains(list, "<title>Devices · Zirox SNMP</title>") ||
+		!strings.Contains(list, "data-sortable") || !strings.Contains(list, `class="stat st-ok on"`) {
+		t.Error("device list lacks its title, sortable columns or the active status chip")
+	}
+
 	// Tick only Ethernet1/5 and the CPU, then apply.
 	objs, _ := e.st.Objects(1)
 	form := url.Values{}

@@ -195,6 +195,7 @@ var funcs = template.FuncMap{
 	"secs":      func(d time.Duration) int { return int(d.Seconds()) },
 	"list":      func(v ...string) []string { return v },
 	"hasPrefix": strings.HasPrefix,
+	"status":    rowStatus,
 	"speed":     speedText,
 	"iftype": func(t int) string {
 		if n, ok := ifTypeNames[t]; ok {
@@ -248,6 +249,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 		data = map[string]any{}
 	}
 	data["Page"] = page
+	data["Title"] = pageTitles[page]
 	u, _ := s.currentUser(r)
 	data["User"] = u.Name
 	data["CanEdit"] = u.Role == store.RoleAdmin
@@ -262,6 +264,13 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	if err := t.ExecuteTemplate(w, "layout", data); err != nil {
 		s.log.Error("render", "page", page, "err", err)
 	}
+}
+
+// pageTitles name each page in the browser tab, so several open tabs can be told apart.
+var pageTitles = map[string]string{
+	"devices": "Devices", "device": "Device", "device_form": "Device", "credentials": "Credentials",
+	"credential_form": "Credentials", "profiles": "Poll profiles", "settings": "Settings", "import": "Import",
+	"custom_oids": "Custom OIDs", "prometheus": "Prometheus", "audit": "Change log", "users": "Users", "login": "Log in",
 }
 
 func redirect(w http.ResponseWriter, r *http.Request, path, msg string) {

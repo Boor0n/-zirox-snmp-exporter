@@ -3,59 +3,59 @@
   <h1>Devices <span class="muted">{{.Total}}</span></h1>
   {{if .CanEdit}}<a class="btn primary" href="/devices/new">+ Add device</a>{{end}}
 </div>
-<div class="stats">
-  <a href="/?status=ok" class="stat ok">Polling OK: {{index .Stats "ok"}}</a>
-  <a href="/?status=failing" class="stat bad">Errors: {{index .Stats "failing"}}</a>
-  <a href="/?status=discovering" class="stat run">Discovering: {{index .Stats "discovering"}}</a>
-  <a href="/?status=pending" class="stat">Pending: {{index .Stats "pending"}}</a>
-  <a href="/?status=disabled" class="stat">Disabled: {{index .Stats "disabled"}}</a>
-</div>
-<form class="filters" method="get" action="/">
-  <input name="q" value="{{.Q}}" placeholder="Search: name, IP, sysName, group" aria-label="Search devices">
+<nav class="stats" aria-label="Filter by status">
+  <a href="/{{if or .Q .Group}}?q={{.Q}}&amp;group={{.Group}}{{end}}" class="stat{{if not .Status}} on{{end}}" {{if not .Status}}aria-current="true"{{end}}>All <b>{{.Total}}</b></a>
+  {{$s := .Status}}{{$q := .Q}}{{$g := .Group}}
+  {{range $k := (list "failing" "ok" "discovering" "pending" "disabled")}}{{$n := index $.Stats $k}}
+  <a href="/?status={{$k}}{{if $q}}&amp;q={{$q}}{{end}}{{if $g}}&amp;group={{$g}}{{end}}" class="stat st-{{$k}}{{if eq $s $k}} on{{end}}{{if not $n}} zero{{end}}" {{if eq $s $k}}aria-current="true"{{end}}><span class="dot" aria-hidden="true"></span>{{if eq $k "failing"}}Errors{{else if eq $k "ok"}}Polling OK{{else if eq $k "discovering"}}Discovering{{else if eq $k "pending"}}Pending{{else}}Disabled{{end}} <b>{{$n}}</b></a>
+  {{end}}
+</nav>
+<form class="filters" method="get" action="/" role="search">
+  <input type="search" name="q" value="{{.Q}}" placeholder="Search: name, IP, sysName, group" aria-label="Search devices" data-hotkey="/">
   <select name="group" aria-label="Group"><option value="">All groups</option>{{range .Groups}}<option {{if eq . $.Group}}selected{{end}}>{{.}}</option>{{end}}</select>
   <input type="hidden" name="status" value="{{.Status}}">
-  <button>Search</button>{{if or .Q .Group .Status}} <a href="/">Reset</a>{{end}}
+  <button>Search</button>{{if or .Q .Group .Status}} <a href="/">Reset filters</a>{{end}}
 </form>
 {{if .AnyDiscovering}}<div data-autoreload="5"></div>{{end}}
 <form method="post" action="/devices/bulk" id="bulk">
-<div class="table-wrap"><table class="list devices">
+<div class="table-wrap"><table class="list devices" data-sortable>
   <thead><tr>
     <th class="w1"><input type="checkbox" data-check-all="ids" aria-label="Select all devices"></th>
-    <th>Device</th><th>Group</th><th>Status</th><th>Objects</th><th>Interval</th><th>Last poll</th><th></th>
+    <th data-sort="text">Device</th><th data-sort="text" aria-sort="ascending">Group</th><th data-sort="num">Status</th><th data-sort="num" title="Objects ticked for polling / objects found">Polled</th><th data-sort="num">Interval</th><th data-sort="num">Last poll</th><th><span class="sr-only">Actions</span></th>
   </tr></thead>
   <tbody>
-  {{range .Rows}}
-  <tr class="{{if not .Enabled}}off{{end}}">
+  {{range .Rows}}{{$st := status .}}
+  <tr class="st-{{$st}}{{if not .Enabled}} off{{end}}">
     <td><input type="checkbox" name="ids" value="{{.ID}}" aria-label="Select {{.Name}}"></td>
-    <td><a href="/devices/{{.ID}}"><b>{{.Name}}</b></a><div class="muted small">{{.Address}}{{if ne .Port 161}}:{{.Port}}{{end}}{{with .SysName}} · {{.}}{{end}}</div></td>
-    <td>{{.Group}}</td>
-    <td>
+    <td data-v="{{.Name}}"><a class="devname" href="/devices/{{.ID}}"><b>{{.Name}}</b></a><div class="muted small">{{.Address}}{{if ne .Port 161}}:{{.Port}}{{end}}{{if and .SysName (ne .SysName .Name)}} · {{.SysName}}{{end}}</div></td>
+    <td data-v="{{.Group}}">{{.Group}}</td>
+    <td data-v="{{if eq $st "failing"}}0{{else if eq $st "discovering"}}1{{else if eq $st "pending"}}2{{else if eq $st "ok"}}3{{else}}4{{end}}">
       {{if not .Enabled}}<span class="badge">disabled</span>
       {{else if .Discovering}}<span class="badge run">discovering…</span>
       {{else if .LastDiscovery.IsZero}}{{if .DiscoveryError}}<span class="badge bad">not responding</span><div class="errtext small" title="{{.DiscoveryError}}">{{.DiscoveryError}}</div>{{else}}<span class="badge">pending</span>{{end}}
       {{else if not .Snap}}<span class="badge">waiting for poll</span>
       {{else if .Snap.OK}}<span class="badge ok">OK</span>
-      {{else}}<span class="badge bad">error ×{{.Snap.Fails}}</span><div class="errtext small" title="{{.Snap.Err}}">{{.Snap.Err}}</div>{{end}}
+      {{else}}<span class="badge bad" title="{{.Snap.Fails}} failed polls in a row">error ×{{.Snap.Fails}}</span><div class="errtext small" title="{{.Snap.Err}}">{{.Snap.Err}}</div>{{end}}
     </td>
-    <td>{{.Selected}} / {{.Total}}</td>
-    <td title="{{.Eff.Source}}">{{secs .Eff.Interval}} s</td>
-    <td>{{if .Snap}}{{ago .Snap.At}} <span class="muted small">{{dur .Snap.Duration}}</span>{{else}}—{{end}}</td>
+    <td data-v="{{.Selected}}" class="nowrap">{{.Selected}} <span class="muted">/ {{.Total}}</span></td>
+    <td data-v="{{secs .Eff.Interval}}" title="Source: {{.Eff.Source}}" class="nowrap">{{secs .Eff.Interval}} s</td>
+    <td data-v="{{if .Snap}}{{.Snap.At.Unix}}{{else}}0{{end}}" class="nowrap">{{if .Snap}}{{ago .Snap.At}} <span class="muted small" title="Poll took {{dur .Snap.Duration}}">{{dur .Snap.Duration}}</span>{{else}}—{{end}}</td>
     <td class="actions">{{if $.CanEdit}}
       <button class="link" formaction="/devices/{{.ID}}/refresh?back=list" name="back" value="list" title="Full discovery: find new ports and sensors">Refresh</button>
       <a href="/devices/{{.ID}}/edit">Edit</a>
     {{end}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="8" class="empty">No devices yet.{{if $.CanEdit}} <a href="/devices/new">Add the first one</a> or <a href="/import">import a CSV</a>.{{end}}</td></tr>
+  <tr><td colspan="8" class="empty">{{if or .Q .Group .Status}}No devices match these filters. <a href="/">Show all devices</a>.{{else}}No devices yet.{{if $.CanEdit}} <a href="/devices/new">Add the first one</a> or <a href="/import">import a CSV</a>.{{end}}{{end}}</td></tr>
   {{end}}
   </tbody>
 </table></div>
-{{if .CanEdit}}<div class="bulk">
-  Selected:
+{{if .CanEdit}}<div class="bulk" data-bulk>
+  <span data-bulk-count>Selected:</span>
   <button name="action" value="refresh">Refresh</button>
   <button name="action" value="enable">Enable</button>
   <button name="action" value="disable">Disable</button>
-  <button name="action" value="delete" class="danger" data-confirm="Delete the selected devices?">Delete</button>
+  <button name="action" value="delete" class="danger" data-confirm="Delete the selected devices? Their settings and ticked ports are removed.">Delete</button>
 </div>{{end}}
 </form>
 {{end}}

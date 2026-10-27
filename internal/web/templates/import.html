@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1>Import devices from CSV</h1>
-{{with .Error}}<div class="flash err">{{.}}</div>{{end}}
+{{with .Error}}<div class="flash err" role="alert">{{.}}</div>{{end}}
 {{if .Results}}
 <div class="flash ok">Added: {{.Imported}} of {{len .Results}}. Full discovery of new devices runs in the background (at most 8 at a time).</div>
 <div class="table-wrap"><table class="list">
