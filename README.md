@@ -29,9 +29,11 @@ SNMP-экспортер для Prometheus с веб-интерфейсом. Ус
 
 ```bash
 T=github_pat_...   # ваш токен
-curl -fsSL -H "Authorization: token $T" \
-  https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/deploy/get.sh | sudo GITHUB_TOKEN=$T sh
+curl -fsSL -H "Authorization: Bearer $T" -H "Accept: application/vnd.github.raw" \
+  https://api.github.com/repos/Boor0n/-zirox-snmp-exporter/contents/deploy/get.sh | sudo GITHUB_TOKEN=$T sh
 ```
+
+Скрипт берётся через API GitHub: `raw.githubusercontent.com` для приватного репозитория с fine-grained токеном отвечает 404. Если интернет доступен только через прокси, передайте его и `curl`, и скрипту: `curl -x http://прокси:порт ... | sudo GITHUB_TOKEN=$T https_proxy=http://прокси:порт sh`. Docker при установке ничего не скачивает: образ приходит файлом.
 
 Скрипт скачивает последний релиз, проверяет SHA256, загружает образ в Docker и запускает контейнер `zirox` (`--restart unless-stopped`), ждёт ответа веб-интерфейса и выводит адрес и пароль admin. Данные лежат в `/var/lib/zirox`, настройки в `/etc/zirox/zirox.env`.
 

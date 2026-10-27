@@ -6,8 +6,10 @@
 # Private repository: pass a GitHub token that can read it, both to curl and
 # to the script:
 #
-#   curl -fsSL -H "Authorization: token $T" \
-#     https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/deploy/get.sh | sudo GITHUB_TOKEN=$T sh
+#   curl -fsSL -H "Authorization: Bearer $T" -H "Accept: application/vnd.github.raw" \
+#     https://api.github.com/repos/Boor0n/-zirox-snmp-exporter/contents/deploy/get.sh | sudo GITHUB_TOKEN=$T sh
+#
+# Behind a proxy, give it to curl (-x) and to the script (https_proxy=...).
 #
 # Options (after "sh -s --", e.g. "| sudo sh -s -- --systemd"):
 #   --docker            run in Docker (default when Docker is running)
