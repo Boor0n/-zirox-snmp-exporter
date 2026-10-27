@@ -30,7 +30,7 @@ ENV_DIR=/etc/zirox
 ENV_FILE=$ENV_DIR/zirox.env
 CONTAINER=zirox
 
-mode="" version="" port=9116 uninstall=false
+mode="" version="" port="" uninstall=false
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--docker) mode=docker; shift ;;
@@ -51,6 +51,16 @@ command -v curl >/dev/null || die "curl is required"
 command -v tar >/dev/null || die "tar is required"
 
 docker_ok() { command -v docker >/dev/null && docker info >/dev/null 2>&1; }
+
+# port_busy reports whether something listens on TCP port $1 (best effort).
+port_busy() { command -v ss >/dev/null && ss -ltnH "sport = :$1" 2>/dev/null | grep -q .; }
+
+# free_port prints the first free port from 9117 on, for the error message.
+free_port() {
+	p=9117
+	while port_busy "$p" && [ "$p" -lt 9200 ]; do p=$((p + 1)); done
+	echo "$p"
+}
 
 if $uninstall; then
 	if docker_ok && docker inspect "$CONTAINER" >/dev/null 2>&1; then
@@ -73,6 +83,17 @@ case "$mode" in
 docker) docker_ok || die "Docker is not running; start it or use --systemd" ;;
 systemd) command -v systemctl >/dev/null || die "systemd not found; install Docker and use --docker" ;;
 esac
+
+# Without --port keep the port of an existing install, so an upgrade with the
+# same command does not move it back to the default.
+if [ -z "$port" ]; then
+	if [ "$mode" = docker ] && docker inspect "$CONTAINER" >/dev/null 2>&1; then
+		port=$(docker port "$CONTAINER" 9116/tcp 2>/dev/null | sed -n '1s/.*://p')
+	elif [ "$mode" = systemd ] && [ -f "$ENV_FILE" ]; then
+		port=$(sed -n 's/^ZIROX_LISTEN=.*:\([0-9]*\)$/\1/p' "$ENV_FILE")
+	fi
+	port=${port:-9116}
+fi
 
 case "$(uname -m)" in
 x86_64|amd64) arch=amd64 ;;
@@ -167,15 +188,21 @@ if [ "$mode" = docker ]; then
 		upgrade=true
 		docker rm -f "$CONTAINER" >/dev/null
 	fi
+	if port_busy "$port"; then
+		die "port $port is already in use (another exporter?); add --port $(free_port): ... | sudo sh -s -- --port $(free_port)"
+	fi
 	# On SELinux hosts (RHEL, Rocky, Alma) the data directory needs a
 	# container label, otherwise Zirox cannot write its database.
 	vol=$DATA_DIR:/data
 	if command -v getenforce >/dev/null && [ "$(getenforce 2>/dev/null)" != Disabled ]; then
 		vol=$vol:Z
 	fi
-	docker run -d --name "$CONTAINER" --restart unless-stopped \
+	if ! docker run -d --name "$CONTAINER" --restart unless-stopped \
 		-p "$port:9116" --env-file "$ENV_FILE" -e ZIROX_LISTEN=:9116 \
-		-v "$vol" "$IMAGE:$tag" >/dev/null
+		-v "$vol" "$IMAGE:$tag" >/dev/null; then
+		docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+		die "the container did not start; if port $port is taken, add --port $(free_port)"
+	fi
 	logs="docker logs -f $CONTAINER"
 else
 	if docker_ok && docker inspect "$CONTAINER" >/dev/null 2>&1; then
@@ -190,6 +217,9 @@ else
 	fi
 	upgrade=false
 	[ -f /usr/local/bin/zirox ] && upgrade=true
+	if ! $upgrade && port_busy "$port"; then
+		die "port $port is already in use (another exporter?); add --port $(free_port): ... | sudo sh -s -- --port $(free_port)"
+	fi
 	# install.sh creates the zirox user, the unit and the data directory.
 	sh "$dir/install.sh" --binary "$dir/zirox" >/dev/null
 	chgrp zirox "$ENV_FILE" 2>/dev/null || true
