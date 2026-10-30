@@ -253,12 +253,14 @@ Check: `promtool check rules deploy/alerts.yml && promtool test rules deploy/ale
 
 ## Grafana
 
-`deploy/grafana-dashboard.json` is the "Zirox SNMP" dashboard. Import: Grafana → Dashboards → New → Import → upload the file, pick the Prometheus data source. Filters at the top: group, device, interface. Sections:
+`deploy/grafana-dashboard.json` is the "Zirox SNMP" dashboard. Import: Grafana → Dashboards → New → Import → upload the file, pick the Prometheus data source. If a dashboard with the same name already exists, choose "Import (Overwrite)". Filters at the top: group, device (one at a time), port. Sections:
 
-- **Overview**: number of devices, how many do not answer, ports down, hardware problems, a table of all devices with the time of the last successful poll;
+- **Overview** (for the selected groups): number of devices, how many do not answer, ports down, hardware problems, total traffic; a table of all devices with status, CPU, temperature, ports and traffic (click a device name to open it); top 10 ports by traffic and by load; a list of ports that are down;
+- **Device**: status, CPU, memory and temperature gauges, ports up/down, traffic in/out; one traffic graph with inbound above zero and outbound below (idle ports are hidden, the legend is sortable by mean/max/last); load in % of port speed; errors and discards per minute; a table of all ports with status, speed, in/out in Mbit/s, load and errors in the last hour;
 - **Health**: CPU, memory, temperature, disks, PSU and fan state;
-- **Interfaces**: inbound/outbound traffic, utilization in %, errors and discards, a table of ports with status and speed;
-- **Firewall and routing**: ASA connections and VPN sessions, a table of BGP peers.
+- **Firewall and routing** (collapsed): ASA connections and VPN sessions, a table of BGP peers.
+
+Traffic is shown in Mbit/s and switches to Gbit/s automatically. Rates use a 5 minute window, so graphs work with any poll interval up to 2 minutes.
 
 Since the port metric names match the standard snmp_exporter, ready dashboards from the Grafana catalog work too.
 
