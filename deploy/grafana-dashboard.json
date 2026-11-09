@@ -2070,7 +2070,7 @@
     {
       "type": "timeseries",
       "title": "Traffic",
-      "description": "Traffic of the ports picked in the Port filter at the top: inbound is a solid line, outbound dashed. Ports with no traffic (under 10 kbit/s) are hidden. Click a name in the legend to show only that port; sort by Max to find the busiest.",
+      "description": "Traffic of the ports picked in the Port filter at the top: download (in) in shades of green, upload (out) in shades of turquoise. Ports with no traffic (under 10 kbit/s) are hidden. Click a name in the legend to show only that port; sort by Max to find the busiest.",
       "id": 21,
       "datasource": {
         "type": "prometheus",
@@ -2091,8 +2091,8 @@
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "fillOpacity": 15,
+            "lineWidth": 2,
+            "fillOpacity": 30,
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": 300000,
@@ -2121,22 +2121,30 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "/ in$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "shades",
+                  "fixedColor": "#56C26A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "/ out$/"
             },
             "properties": [
               {
-                "id": "custom.lineStyle",
+                "id": "color",
                 "value": {
-                  "fill": "dash",
-                  "dash": [
-                    8,
-                    4
-                  ]
+                  "mode": "shades",
+                  "fixedColor": "#2BC4C4"
                 }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
               }
             ]
           },
