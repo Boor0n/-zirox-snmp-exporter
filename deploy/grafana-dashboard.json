@@ -110,7 +110,7 @@
       {
         "type": "query",
         "name": "interface",
-        "label": "Port",
+        "label": "Ports on graph",
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
@@ -2069,8 +2069,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Traffic (in up, out down)",
-      "description": "Inbound traffic above zero, outbound below. Ports with no traffic (under 10 kbit/s) are hidden. Click a name in the legend to show only that port; sort by Max to find the busiest.",
+      "title": "Traffic",
+      "description": "Traffic of the ports picked in the Port filter at the top: inbound is a solid line, outbound dashed. Ports with no traffic (under 10 kbit/s) are hidden. Click a name in the legend to show only that port; sort by Max to find the busiest.",
       "id": 21,
       "datasource": {
         "type": "prometheus",
@@ -2125,8 +2125,18 @@
             },
             "properties": [
               {
-                "id": "custom.transform",
-                "value": "negative-Y"
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    4
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
               }
             ]
           },
@@ -2198,7 +2208,7 @@
     {
       "type": "timeseries",
       "title": "Utilization",
-      "description": "Load in % of port speed. Orange above 70 %, red above 90 %. Idle ports are hidden.",
+      "description": "Load of all ports of the device in % of port speed. Orange above 70 %, red above 90 %. Idle ports are hidden.",
       "id": 22,
       "datasource": {
         "type": "prometheus",
@@ -2301,7 +2311,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "100 * rate(ifHCInOctets{device=\"$device\", ifName=~\"$interface\"}[5m]) * 8 / (ifHighSpeed{device=\"$device\", ifName=~\"$interface\"} * 1e6 > 0)",
+          "expr": "100 * rate(ifHCInOctets{device=\"$device\"}[5m]) * 8 / (ifHighSpeed{device=\"$device\"} * 1e6 > 0)",
           "legendFormat": "{{ifName}} in",
           "refId": "A",
           "range": true,
@@ -2312,7 +2322,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "100 * rate(ifHCOutOctets{device=\"$device\", ifName=~\"$interface\"}[5m]) * 8 / (ifHighSpeed{device=\"$device\", ifName=~\"$interface\"} * 1e6 > 0)",
+          "expr": "100 * rate(ifHCOutOctets{device=\"$device\"}[5m]) * 8 / (ifHighSpeed{device=\"$device\"} * 1e6 > 0)",
           "legendFormat": "{{ifName}} out",
           "refId": "B",
           "range": true,
@@ -2397,7 +2407,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "60 * (rate(ifInErrors{device=\"$device\", ifName=~\"$interface\"}[5m]) + rate(ifOutErrors{device=\"$device\", ifName=~\"$interface\"}[5m])) > 0",
+          "expr": "60 * (rate(ifInErrors{device=\"$device\"}[5m]) + rate(ifOutErrors{device=\"$device\"}[5m])) > 0",
           "legendFormat": "{{ifName}} errors",
           "refId": "A",
           "range": true,
@@ -2408,7 +2418,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "60 * (rate(ifInDiscards{device=\"$device\", ifName=~\"$interface\"}[5m]) + rate(ifOutDiscards{device=\"$device\", ifName=~\"$interface\"}[5m])) > 0",
+          "expr": "60 * (rate(ifInDiscards{device=\"$device\"}[5m]) + rate(ifOutDiscards{device=\"$device\"}[5m])) > 0",
           "legendFormat": "{{ifName}} discards",
           "refId": "B",
           "range": true,
@@ -2654,7 +2664,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "ifOperStatus{device=\"$device\", ifName=~\"$interface\"} + 0",
+          "expr": "ifOperStatus{device=\"$device\"} + 0",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -2666,7 +2676,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "ifHighSpeed{device=\"$device\", ifName=~\"$interface\"} + 0",
+          "expr": "ifHighSpeed{device=\"$device\"} + 0",
           "legendFormat": "",
           "refId": "B",
           "instant": true,
@@ -2678,7 +2688,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(ifHCInOctets{device=\"$device\", ifName=~\"$interface\"}[5m]) * 8 / 1e6",
+          "expr": "rate(ifHCInOctets{device=\"$device\"}[5m]) * 8 / 1e6",
           "legendFormat": "",
           "refId": "C",
           "instant": true,
@@ -2690,7 +2700,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(ifHCOutOctets{device=\"$device\", ifName=~\"$interface\"}[5m]) * 8 / 1e6",
+          "expr": "rate(ifHCOutOctets{device=\"$device\"}[5m]) * 8 / 1e6",
           "legendFormat": "",
           "refId": "D",
           "instant": true,
@@ -2702,7 +2712,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "100 * (rate(ifHCInOctets{device=\"$device\", ifName=~\"$interface\"}[5m]) > rate(ifHCOutOctets{device=\"$device\", ifName=~\"$interface\"}[5m]) or rate(ifHCOutOctets{device=\"$device\", ifName=~\"$interface\"}[5m])) * 8 / (ifHighSpeed{device=\"$device\", ifName=~\"$interface\"} * 1e6 > 0)",
+          "expr": "100 * (rate(ifHCInOctets{device=\"$device\"}[5m]) > rate(ifHCOutOctets{device=\"$device\"}[5m]) or rate(ifHCOutOctets{device=\"$device\"}[5m])) * 8 / (ifHighSpeed{device=\"$device\"} * 1e6 > 0)",
           "legendFormat": "",
           "refId": "E",
           "instant": true,
@@ -2714,7 +2724,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "increase(ifInErrors{device=\"$device\", ifName=~\"$interface\"}[1h]) + increase(ifOutErrors{device=\"$device\", ifName=~\"$interface\"}[1h])",
+          "expr": "increase(ifInErrors{device=\"$device\"}[1h]) + increase(ifOutErrors{device=\"$device\"}[1h])",
           "legendFormat": "",
           "refId": "F",
           "instant": true,
