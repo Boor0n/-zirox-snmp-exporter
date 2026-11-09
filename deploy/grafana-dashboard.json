@@ -1487,15 +1487,141 @@
       ]
     },
     {
+      "type": "timeseries",
+      "title": "Traffic by device",
+      "description": "Total traffic of each device in the selected groups (sum of all polled ports). Download in shades of green, upload in shades of turquoise.",
+      "id": 12,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Mbits",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": 300000,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisCenteredZero": false,
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ in$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "shades",
+                  "fixedColor": "#56C26A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ out$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "shades",
+                  "fixedColor": "#2BC4C4"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (device) (rate(ifHCInOctets{group=~\"$group\"}[5m])) * 8 / 1e6",
+          "legendFormat": "{{device}} in",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (device) (rate(ifHCOutOctets{group=~\"$group\"}[5m])) * 8 / 1e6",
+          "legendFormat": "{{device}} out",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "Device: $device",
-      "id": 12,
+      "id": 13,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 32
       },
       "panels": []
     },
@@ -1503,7 +1629,7 @@
       "type": "stat",
       "title": "Status",
       "description": "",
-      "id": 13,
+      "id": 14,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1512,7 +1638,7 @@
         "h": 4,
         "w": 3,
         "x": 0,
-        "y": 24
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -1588,7 +1714,7 @@
       "type": "gauge",
       "title": "CPU",
       "description": "",
-      "id": 14,
+      "id": 15,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1597,7 +1723,7 @@
         "h": 4,
         "w": 3,
         "x": 3,
-        "y": 24
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -1661,7 +1787,7 @@
       "type": "gauge",
       "title": "Memory",
       "description": "",
-      "id": 15,
+      "id": 16,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1670,7 +1796,7 @@
         "h": 4,
         "w": 3,
         "x": 6,
-        "y": 24
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -1734,7 +1860,7 @@
       "type": "gauge",
       "title": "Temperature",
       "description": "",
-      "id": 16,
+      "id": 17,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1743,7 +1869,7 @@
         "h": 4,
         "w": 3,
         "x": 9,
-        "y": 24
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -1807,7 +1933,7 @@
       "type": "stat",
       "title": "Ports up",
       "description": "Polled ports that are up.",
-      "id": 17,
+      "id": 18,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1816,7 +1942,7 @@
         "h": 4,
         "w": 3,
         "x": 12,
-        "y": 24
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -1872,7 +1998,7 @@
       "type": "stat",
       "title": "Ports down",
       "description": "Administratively up but operationally down.",
-      "id": 18,
+      "id": 19,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1881,7 +2007,7 @@
         "h": 4,
         "w": 3,
         "x": 15,
-        "y": 24
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -1941,7 +2067,7 @@
       "type": "stat",
       "title": "Traffic in",
       "description": "",
-      "id": 19,
+      "id": 20,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1950,7 +2076,7 @@
         "h": 4,
         "w": 3,
         "x": 18,
-        "y": 24
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -2006,7 +2132,7 @@
       "type": "stat",
       "title": "Traffic out",
       "description": "",
-      "id": 20,
+      "id": 21,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2015,7 +2141,7 @@
         "h": 4,
         "w": 3,
         "x": 21,
-        "y": 24
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -2071,7 +2197,7 @@
       "type": "timeseries",
       "title": "Traffic",
       "description": "Traffic of the ports picked in the Port filter at the top: download (in) in shades of green, upload (out) in shades of turquoise. Ports with no traffic (under 10 kbit/s) are hidden. Click a name in the legend to show only that port; sort by Max to find the busiest.",
-      "id": 21,
+      "id": 22,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2080,7 +2206,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 37
       },
       "fieldConfig": {
         "defaults": {
@@ -2215,9 +2341,294 @@
     },
     {
       "type": "timeseries",
+      "title": "Total of selected ports",
+      "description": "Sum of the ports picked in the Port filter at the top, e.g. all uplinks of a switch.",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Mbits",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 30,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": 300000,
+            "axisBorderShow": false,
+            "axisPlacement": "auto",
+            "axisCenteredZero": false,
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ in$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "shades",
+                  "fixedColor": "#56C26A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/ out$/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "shades",
+                  "fixedColor": "#2BC4C4"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ],
+          "sortBy": "Max",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(ifHCInOctets{device=\"$device\", ifName=~\"$interface\"}[5m])) * 8 / 1e6",
+          "legendFormat": "Total in",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(ifHCOutOctets{device=\"$device\", ifName=~\"$interface\"}[5m])) * 8 / 1e6",
+          "legendFormat": "Total out",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "95th percentile and peak",
+      "description": "For the selected ports over the time range. 95th percentile: traffic was below this value 95 % of the time; the usual number for capacity planning and ISP billing.",
+      "id": 24,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Mbits",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#56C26A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2BC4C4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#56C26A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "D"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2BC4C4"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value_and_name",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "quantile_over_time(0.95, sum(rate(ifHCInOctets{device=\"$device\", ifName=~\"$interface\"}[5m]))[$__range:1m]) * 8 / 1e6",
+          "legendFormat": "95th in",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "quantile_over_time(0.95, sum(rate(ifHCOutOctets{device=\"$device\", ifName=~\"$interface\"}[5m]))[$__range:1m]) * 8 / 1e6",
+          "legendFormat": "95th out",
+          "refId": "B",
+          "range": false,
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max_over_time(sum(rate(ifHCInOctets{device=\"$device\", ifName=~\"$interface\"}[5m]))[$__range:1m]) * 8 / 1e6",
+          "legendFormat": "Peak in",
+          "refId": "C",
+          "range": false,
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max_over_time(sum(rate(ifHCOutOctets{device=\"$device\", ifName=~\"$interface\"}[5m]))[$__range:1m]) * 8 / 1e6",
+          "legendFormat": "Peak out",
+          "refId": "D",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
       "title": "Utilization",
       "description": "Load of all ports of the device in % of port speed. Orange above 70 %, red above 90 %. Idle ports are hidden.",
-      "id": 22,
+      "id": 25,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2226,7 +2637,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 39
+        "y": 56
       },
       "fieldConfig": {
         "defaults": {
@@ -2342,7 +2753,7 @@
       "type": "timeseries",
       "title": "Errors and discards",
       "description": "Packets per minute. Only ports that have errors or discards are shown. Empty is good.",
-      "id": 23,
+      "id": 26,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2351,7 +2762,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 39
+        "y": 56
       },
       "fieldConfig": {
         "defaults": {
@@ -2438,7 +2849,7 @@
       "type": "table",
       "title": "Ports",
       "description": "Every polled port of the device. Click a column header to sort, the funnel icon to filter.",
-      "id": 24,
+      "id": 27,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2447,7 +2858,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 64
       },
       "fieldConfig": {
         "defaults": {
@@ -2787,13 +3198,13 @@
     {
       "type": "row",
       "title": "Health: $device",
-      "id": 30,
+      "id": 33,
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 76
       },
       "panels": []
     },
@@ -2801,7 +3212,7 @@
       "type": "timeseries",
       "title": "CPU",
       "description": "",
-      "id": 25,
+      "id": 28,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2810,7 +3221,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 60
+        "y": 77
       },
       "fieldConfig": {
         "defaults": {
@@ -2882,7 +3293,7 @@
       "type": "timeseries",
       "title": "Memory used",
       "description": "",
-      "id": 26,
+      "id": 29,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2891,7 +3302,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 60
+        "y": 77
       },
       "fieldConfig": {
         "defaults": {
@@ -2943,7 +3354,7 @@
       "type": "timeseries",
       "title": "Temperature",
       "description": "",
-      "id": 27,
+      "id": 30,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2952,7 +3363,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 68
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
@@ -3022,7 +3433,7 @@
       "type": "timeseries",
       "title": "Storage used",
       "description": "",
-      "id": 28,
+      "id": 31,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -3031,7 +3442,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 68
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
@@ -3083,7 +3494,7 @@
       "type": "table",
       "title": "Hardware state (fans, power supplies, sensors)",
       "description": "",
-      "id": 29,
+      "id": 32,
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -3092,7 +3503,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 76
+        "y": 93
       },
       "fieldConfig": {
         "defaults": {
@@ -3194,20 +3605,20 @@
     {
       "type": "row",
       "title": "Firewall and routing: $device",
-      "id": 35,
+      "id": 38,
       "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 83
+        "y": 100
       },
       "panels": [
         {
           "type": "timeseries",
           "title": "Firewall connections",
           "description": "",
-          "id": 31,
+          "id": 34,
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -3216,7 +3627,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 84
+            "y": 101
           },
           "fieldConfig": {
             "defaults": {
@@ -3266,7 +3677,7 @@
           "type": "timeseries",
           "title": "VPN sessions",
           "description": "",
-          "id": 32,
+          "id": 35,
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -3275,7 +3686,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 84
+            "y": 101
           },
           "fieldConfig": {
             "defaults": {
@@ -3324,7 +3735,7 @@
         {
           "type": "stat",
           "title": "BGP peers not established",
-          "id": 33,
+          "id": 36,
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -3333,7 +3744,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 84
+            "y": 101
           },
           "fieldConfig": {
             "defaults": {
@@ -3387,7 +3798,7 @@
           "type": "table",
           "title": "BGP peers",
           "description": "",
-          "id": 34,
+          "id": 37,
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -3396,7 +3807,7 @@
             "h": 8,
             "w": 24,
             "x": 0,
-            "y": 92
+            "y": 109
           },
           "fieldConfig": {
             "defaults": {
