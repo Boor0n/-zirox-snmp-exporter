@@ -256,7 +256,7 @@ Check: `promtool check rules deploy/alerts.yml && promtool test rules deploy/ale
 `deploy/grafana-dashboard.json` is the "Zirox SNMP" dashboard. Import: Grafana → Dashboards → New → Import → upload the file, pick the Prometheus data source. If a dashboard with the same name already exists, choose "Import (Overwrite)". Filters at the top: group, device (one at a time), and the ports drawn on the traffic graph. Sections:
 
 - **Overview** (for the selected groups): number of devices, how many do not answer, ports down, hardware problems, total traffic; a table of all devices with status, CPU, temperature, ports and traffic (click a device name to open it); top 10 ports by traffic and by load; a list of ports that are down;
-- **Device**: status, CPU, memory and temperature gauges, ports up/down, traffic in/out; a traffic graph for the ports picked in the filter, inbound solid and outbound dashed (idle ports are hidden, the legend is sortable by mean/max/last); load and errors of all ports; load in % of port speed and errors/discards per minute; a table of all ports with status, speed, in/out in Mbit/s, load and errors in the last hour;
+- **Device**: status, CPU, memory and temperature gauges, ports up/down, traffic in/out; a traffic graph for the ports picked in the filter, download in shades of green and upload in shades of turquoise (idle ports are hidden, the legend is sortable by mean/max/last); load and errors of all ports; load in % of port speed and errors/discards per minute; a table of all ports with status, speed, in/out in Mbit/s, load and errors in the last hour;
 - **Health**: CPU, memory, temperature, disks, PSU and fan state;
 - **Firewall and routing** (collapsed): ASA connections and VPN sessions, a table of BGP peers.
 
