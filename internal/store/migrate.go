@@ -48,6 +48,8 @@ var migrations = []string{
 	`ALTER TABLE objects ADD COLUMN neighbor TEXT NOT NULL DEFAULT '';
 	 ALTER TABLE objects ADD COLUMN neighbor_port TEXT NOT NULL DEFAULT '';
 	 ALTER TABLE objects ADD COLUMN neighbor_proto TEXT NOT NULL DEFAULT '';`,
+	// 7: API tokens can expire (0 = never, as before).
+	`ALTER TABLE api_tokens ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // backupsKept is how many automatic database backups stay on disk.

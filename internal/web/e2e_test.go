@@ -944,3 +944,59 @@ func TestNeighborsMakeUplinks(t *testing.T) {
 		t.Errorf("probe lacks the neighbour:\n%s", probe)
 	}
 }
+
+func TestLoginHardening(t *testing.T) {
+	e := setup(t)
+	// Every page carries the security headers, and no inline script is left
+	// for the policy to block.
+	r, err := e.c.Get(e.srv.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if csp := r.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") ||
+		r.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("headers: %v", r.Header)
+	}
+	if _, page := e.get("/login"); strings.Contains(page, "<script>") || !strings.Contains(page, `src="/static/theme.js"`) {
+		t.Error("login page has an inline script")
+	}
+	if code, js := e.get("/static/theme.js"); code != 200 || !strings.Contains(js, "zirox-theme") {
+		t.Errorf("theme.js: %d", code)
+	}
+
+	// Five wrong passwords block the sixth attempt, even with the right password.
+	for i := 0; i < 5; i++ {
+		if _, page := e.post("/login", url.Values{"user": {"admin"}, "password": {"wrong"}}); !strings.Contains(page, "Wrong username or password") {
+			t.Fatalf("attempt %d not refused", i)
+		}
+	}
+	code, page := e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	if code != http.StatusTooManyRequests || !strings.Contains(page, "Too many failed logins") {
+		t.Fatalf("not blocked: %d", code)
+	}
+}
+
+func TestAPITokenExpiry(t *testing.T) {
+	e := setup(t)
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	_, page := e.post("/tokens", url.Values{"name": {"short"}, "role": {"viewer"}, "expires_days": {"30"}})
+	tok := tokenRe.FindString(page)
+	if code, _ := e.api("GET", "/api/v1/devices", tok, ""); code != 200 {
+		t.Fatalf("fresh token: %d", code)
+	}
+	ts, _ := e.st.APITokens()
+	if len(ts) != 1 || ts[0].Expires.Sub(time.Now()) < 29*24*time.Hour {
+		t.Fatalf("expiry not stored: %+v", ts)
+	}
+	if _, page := e.get("/users"); !strings.Contains(page, ts[0].Expires.Format("2006-01-02")) {
+		t.Error("users page lacks the expiry date")
+	}
+	// Move the expiry into the past.
+	if err := e.st.SetAPITokenExpiry(ts[0].ID, time.Now().Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := e.api("GET", "/api/v1/devices", tok, ""); code != 401 || !strings.Contains(body, "expired") {
+		t.Errorf("expired token: %d %s", code, body)
+	}
+}

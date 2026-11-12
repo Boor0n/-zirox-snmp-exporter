@@ -376,7 +376,7 @@ The Users page (admin only): users with the **admin** role (can change everythin
 
 ## REST API
 
-Tokens are created on Users → API tokens and shown once (the database stores only their SHA-256). A read-only token can only read.
+Tokens are created on Users → API tokens and shown once (the database stores only their SHA-256). A read-only token can only read. Tokens expire after the period chosen at creation (a year by default).
 
 ```bash
 T=zx_...   # token
@@ -399,6 +399,9 @@ When creating a device you can pass `"version":"2c","community":"..."` instead o
 ## Security
 
 - UI login with username and password (bcrypt), session in a signed cookie (`HttpOnly`, `SameSite=Strict`); cross-site POST requests are rejected.
+- Login throttling: after 5 wrong passwords in 15 minutes from one address, or for one user name, logins from that address and for that name are refused for 15 minutes (also with the right password), and the change log records "login blocked". Sessions last 12 hours; changing a user's password or role ends that user's sessions.
+- Every page is sent with a strict Content-Security-Policy (scripts only from Zirox itself, no framing), `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`.
+- API tokens expire after 30 days, 90 days or a year (chosen when created; "never" is still possible). An expired token gets `401` with the date it expired.
 - Communities and SNMPv3 passwords are stored encrypted in the database (AES-256-GCM) and never shown in the UI.
 - SNMPv3 authPriv is supported (SHA/SHA-2, AES/AES-192/AES-256, DES).
 

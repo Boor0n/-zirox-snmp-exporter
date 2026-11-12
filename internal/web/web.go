@@ -42,11 +42,12 @@ type Server struct {
 	pages map[string]*template.Template
 	jobs  jobs
 	upd   updateChecker
+	limit *loginLimiter
 }
 
 // New parses the templates and returns the UI server.
 func New(st *store.Store, en *engine.Engine, box *secret.Box, cfg Config, log *slog.Logger) (*Server, error) {
-	s := &Server{st: st, en: en, box: box, cfg: cfg, log: log, pages: map[string]*template.Template{}}
+	s := &Server{st: st, en: en, box: box, cfg: cfg, log: log, pages: map[string]*template.Template{}, limit: newLoginLimiter()}
 	names, err := fs.Glob(assets, "templates/*.html")
 	if err != nil {
 		return nil, err
@@ -302,6 +303,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	if data == nil {
 		data = map[string]any{}
 	}
+	securityHeaders(w.Header())
 	data["Page"] = page
 	data["Title"] = pageTitles[page]
 	u, _ := s.currentUser(r)

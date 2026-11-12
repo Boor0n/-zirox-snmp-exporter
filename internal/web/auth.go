@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -158,13 +159,25 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
 		next = "/"
 	}
+	ip := clientIP(r)
+	if blocked, wait := s.limit.blocked(ip, user); blocked {
+		_ = s.st.AddAudit(user, "login blocked", ip, fmt.Sprintf("too many failed logins, %d more minutes", minutes(wait)))
+		securityHeaders(w.Header()) // render cannot add headers after WriteHeader
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		w.WriteHeader(http.StatusTooManyRequests)
+		s.render(w, r, "login", map[string]any{"Next": next,
+			"Error": fmt.Sprintf("Too many failed logins. Try again in %d minutes, or ask an administrator.", minutes(wait))})
+		return
+	}
 	u, ok := s.checkPassword(user, pass)
 	if !ok {
-		_ = s.st.AddAudit(user, "login failed", clientIP(r), "")
+		s.limit.fail(ip, user)
+		_ = s.st.AddAudit(user, "login failed", ip, "")
 		time.Sleep(500 * time.Millisecond)
 		s.render(w, r, "login", map[string]any{"Next": next, "Error": "Wrong username or password"})
 		return
 	}
+	s.limit.success(user)
 	s.setSession(w, u)
 	_ = s.st.AddAudit(user, "login", clientIP(r), "")
 	http.Redirect(w, r, next, http.StatusSeeOther)
@@ -174,6 +187,8 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
+
+func minutes(d time.Duration) int { return int(d.Minutes()) + 1 }
 
 func clientIP(r *http.Request) string {
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
