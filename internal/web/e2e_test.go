@@ -1014,3 +1014,26 @@ func TestAPITokenExpiry(t *testing.T) {
 		t.Errorf("expired token: %d %s", code, body)
 	}
 }
+
+func TestSDOverHTTPS(t *testing.T) {
+	e := setup(t)
+	e.setAgent("10.0.0.1", snmptest.Switch(2))
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	e.post("/devices/new", url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
+		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}})
+	e.waitDiscovery(1)
+	ts := httptest.NewTLSServer(e.srv.Config.Handler)
+	defer ts.Close()
+	r, err := ts.Client().Get(ts.URL + "/sd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if !strings.Contains(string(b), `"__scheme__":"https"`) {
+		t.Errorf("SD over HTTPS: %s", b)
+	}
+	if _, plain := e.get("/sd"); !strings.Contains(plain, `"__scheme__":"http"`) {
+		t.Errorf("SD over HTTP: %s", plain)
+	}
+}

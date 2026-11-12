@@ -19,7 +19,13 @@
 #   --host-network      Docker: use the host's network, so SNMP goes out
 #                       exactly like from the host (firewalld, routing)
 #   --bridge-network    Docker: back to the default bridge network
+#   --https             serve HTTPS with a self-signed certificate Zirox makes
+#   --tls-cert FILE --tls-key FILE
+#                       serve HTTPS with your certificate (PEM; chain first)
+#   --no-https          back to plain HTTP
 #   --uninstall         remove the container and the service, keep the data
+#
+# HTTPS settings are kept on upgrades; run without these options to keep them.
 #
 # Data (database and encryption key) is kept in /var/lib/zirox and settings in
 # /etc/zirox/zirox.env, so running the command again upgrades in place.
@@ -33,7 +39,7 @@ ENV_DIR=/etc/zirox
 ENV_FILE=$ENV_DIR/zirox.env
 CONTAINER=zirox
 
-mode="" version="" port="" uninstall=false net=""
+mode="" version="" port="" uninstall=false net="" tls="" tls_cert="" tls_key=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--docker) mode=docker; shift ;;
@@ -42,8 +48,12 @@ while [ $# -gt 0 ]; do
 	--port) port=${2:?--port needs a value}; shift 2 ;;
 	--host-network) net=host; mode=docker; shift ;;
 	--bridge-network) net=bridge; mode=docker; shift ;;
+	--https) tls=self; shift ;;
+	--no-https) tls=off; shift ;;
+	--tls-cert) tls_cert=${2:?--tls-cert needs a file}; tls=own; shift 2 ;;
+	--tls-key) tls_key=${2:?--tls-key needs a file}; tls=own; shift 2 ;;
 	--uninstall) uninstall=true; shift ;;
-	-h|--help) sed -n '2,25p' "$0" 2>/dev/null || echo "see deploy/get.sh in $REPO"; exit 0 ;;
+	-h|--help) sed -n '2,31p' "$0" 2>/dev/null || echo "see deploy/get.sh in $REPO"; exit 0 ;;
 	*) echo "error: unknown option $1" >&2; exit 1 ;;
 	esac
 done
@@ -195,6 +205,72 @@ if [ -n "$proxy" ] && ! grep -q '^HTTPS_PROXY=' "$ENV_FILE"; then
 fi
 grep -q 'ZIROX_UPDATE_CHECK' "$ENV_FILE" || echo "#ZIROX_UPDATE_CHECK=0" >>"$ENV_FILE"
 
+# set_env KEY VALUE replaces or adds a setting; unset_env KEY removes it.
+set_env() {
+	if grep -q "^$1=" "$ENV_FILE"; then
+		tmpf=$(mktemp)
+		awk -v k="$1" -v v="$2" 'index($0, k "=") == 1 { print k "=" v; next } { print }' "$ENV_FILE" >"$tmpf"
+		cat "$tmpf" >"$ENV_FILE"
+		rm -f "$tmpf"
+	else
+		echo "$1=$2" >>"$ENV_FILE"
+	fi
+}
+unset_env() {
+	tmpf=$(mktemp)
+	grep -v "^$1=" "$ENV_FILE" >"$tmpf" || true
+	cat "$tmpf" >"$ENV_FILE"
+	rm -f "$tmpf"
+}
+
+# HTTPS. A certificate of your own is copied to $TLS_DIR and mounted into
+# the container; a self-signed one is made by Zirox in its data directory
+# and covers this host's names and addresses.
+TLS_DIR=$ENV_DIR/tls
+case "$tls" in
+self)
+	unset_env ZIROX_TLS_CERT
+	unset_env ZIROX_TLS_KEY
+	set_env ZIROX_TLS self-signed
+	;;
+own)
+	[ -n "$tls_cert" ] && [ -n "$tls_key" ] || die "give both --tls-cert and --tls-key"
+	[ -r "$tls_cert" ] || die "cannot read $tls_cert"
+	[ -r "$tls_key" ] || die "cannot read $tls_key"
+	grep -q "BEGIN CERTIFICATE" "$tls_cert" || die "$tls_cert is not a PEM certificate"
+	grep -q "PRIVATE KEY" "$tls_key" || die "$tls_key is not a PEM private key"
+	mkdir -p "$TLS_DIR"
+	chmod 0750 "$TLS_DIR"
+	cp "$tls_cert" "$TLS_DIR/zirox.crt"
+	cp "$tls_key" "$TLS_DIR/zirox.key"
+	chmod 0644 "$TLS_DIR/zirox.crt"
+	chmod 0640 "$TLS_DIR/zirox.key"
+	unset_env ZIROX_TLS
+	set_env ZIROX_TLS_CERT x
+	set_env ZIROX_TLS_KEY x
+	;;
+off)
+	unset_env ZIROX_TLS
+	unset_env ZIROX_TLS_CERT
+	unset_env ZIROX_TLS_KEY
+	;;
+esac
+# The certificate paths depend on where Zirox runs: /tls in the container.
+if grep -q '^ZIROX_TLS_CERT=' "$ENV_FILE" && [ -f "$TLS_DIR/zirox.crt" ]; then
+	if [ "$mode" = docker ]; then tdir=/tls; else tdir=$TLS_DIR; fi
+	set_env ZIROX_TLS_CERT "$tdir/zirox.crt"
+	set_env ZIROX_TLS_KEY "$tdir/zirox.key"
+fi
+scheme=http
+if grep -q '^ZIROX_TLS_CERT=' "$ENV_FILE" || grep -Eq '^ZIROX_TLS=(self-signed|auto|1)$' "$ENV_FILE"; then
+	scheme=https
+	# Names and addresses for a self-signed certificate; inside a container
+	# Zirox cannot see them itself.
+	hosts=$(hostname -f 2>/dev/null || hostname)
+	for ip in $(hostname -I 2>/dev/null); do hosts="$hosts,$ip"; done
+	set_env ZIROX_TLS_HOSTS "$hosts"
+fi
+
 if [ "$mode" = docker ]; then
 	if command -v systemctl >/dev/null && systemctl is-active --quiet zirox 2>/dev/null; then
 		die "the systemd service zirox is running; remove it first: ... | sudo sh -s -- --uninstall"
@@ -218,8 +294,15 @@ if [ "$mode" = docker ]; then
 	# On SELinux hosts (RHEL, Rocky, Alma) the data directory needs a
 	# container label, otherwise Zirox cannot write its database.
 	vol=$DATA_DIR:/data
+	label=""
 	if command -v getenforce >/dev/null && [ "$(getenforce 2>/dev/null)" != Disabled ]; then
 		vol=$vol:Z
+		label=,Z
+	fi
+	tlsopts=""
+	if [ -d "$TLS_DIR" ]; then
+		chown -R 10001:10001 "$TLS_DIR"
+		tlsopts="-v $TLS_DIR:/tls:ro$label"
 	fi
 	if [ "$net" = host ]; then
 		netopts="--network host -e ZIROX_LISTEN=:$port"
@@ -228,7 +311,7 @@ if [ "$mode" = docker ]; then
 	fi
 	# shellcheck disable=SC2086 # netopts is a list of options
 	if ! docker run -d --name "$CONTAINER" --restart unless-stopped \
-		$netopts --env-file "$ENV_FILE" \
+		$netopts $tlsopts --env-file "$ENV_FILE" \
 		-v "$vol" "$IMAGE:$tag" >/dev/null; then
 		docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 		die "the container did not start; if port $port is taken, add --port $(free_port)"
@@ -253,13 +336,15 @@ else
 	# install.sh creates the zirox user, the unit and the data directory.
 	sh "$dir/install.sh" --binary "$dir/zirox" >/dev/null
 	chgrp zirox "$ENV_FILE" 2>/dev/null || true
+	if [ -d "$TLS_DIR" ]; then chgrp -R zirox "$TLS_DIR" 2>/dev/null || true; fi
 	logs="journalctl -u zirox -f"
 fi
 
 say "Waiting for the web UI"
 ok=false
 for _ in $(seq 1 30); do
-	if curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null 2>&1; then ok=true; break; fi
+	# -k: the certificate names the host, not 127.0.0.1, or is self-signed.
+	if curl -fsSk "$scheme://127.0.0.1:$port/healthz" >/dev/null 2>&1; then ok=true; break; fi
 	sleep 1
 done
 $ok || die "Zirox did not answer on port $port; see: $logs"
@@ -270,14 +355,18 @@ if $upgrade; then
 else
 	say "Installed $tag ($mode)."
 fi
-echo "    Web UI:     http://$host:$port"
+echo "    Web UI:     $scheme://$host:$port"
 if [ -n "$password" ]; then
 	echo "    Login:      admin / $password  (saved in $ENV_FILE)"
 elif ! $upgrade; then
 	# The settings file is left from an earlier attempt: point to the password.
 	echo "    Login:      admin, password: grep ADMIN_PASSWORD $ENV_FILE"
 fi
-echo "    Prometheus: http://$host:$port/sd (HTTP service discovery)"
+echo "    Prometheus: $scheme://$host:$port/sd (HTTP service discovery)"
+if [ "$scheme" = https ] && ! grep -q '^ZIROX_TLS_CERT=' "$ENV_FILE"; then
+	echo "    HTTPS:      self-signed certificate, the browser warns once. Prometheus needs it"
+	echo "                as ca_file: $scheme://$host:$port/tls/cert.pem (see the Prometheus page)"
+fi
 echo "    Logs:       $logs"
 echo "    Upgrade:    run the same command again"
 echo "    Back up $DATA_DIR (database and secret.key) and $ENV_FILE."

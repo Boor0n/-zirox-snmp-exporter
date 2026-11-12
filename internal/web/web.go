@@ -30,6 +30,12 @@ type Config struct {
 	// SecretKey goes into downloaded backups; nil when it comes from
 	// ZIROX_SECRET_KEY (then the backup says to set it on the new server).
 	SecretKey []byte
+	// HTTPS, when on: the certificate file (served at /tls/cert.pem),
+	// whether Zirox made it, its SHA-256 and expiry, for the Prometheus page.
+	TLSCertFile    string
+	TLSSelfSigned  bool
+	TLSFingerprint string
+	TLSNotAfter    time.Time
 }
 
 // Server serves the UI.
@@ -73,6 +79,14 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("POST /logout", s.logout)
+	if s.cfg.TLSCertFile != "" {
+		// Public by nature: browsers and Prometheus fetch it to trust a self-signed certificate.
+		mux.HandleFunc("GET /tls/cert.pem", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/x-pem-file")
+			w.Header().Set("Content-Disposition", `attachment; filename="zirox.crt"`)
+			http.ServeFile(w, r, s.cfg.TLSCertFile)
+		})
+	}
 
 	p := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireLogin(h)) }
 	a := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireAdmin(h)) }

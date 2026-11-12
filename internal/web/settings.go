@@ -135,7 +135,8 @@ func (s *Server) prometheusHelp(w http.ResponseWriter, r *http.Request) {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	s.render(w, r, "prometheus", map[string]any{"Base": scheme + "://" + r.Host, "Host": r.Host})
+	s.render(w, r, "prometheus", map[string]any{"Base": scheme + "://" + r.Host, "Host": r.Host,
+		"HTTPS": r.TLS != nil, "SelfSigned": s.cfg.TLSSelfSigned, "Fingerprint": s.cfg.TLSFingerprint, "NotAfter": s.cfg.TLSNotAfter})
 }
 
 // selectionChanges lists the objects ticked and unticked by a selection save.

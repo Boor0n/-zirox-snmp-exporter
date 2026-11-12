@@ -101,6 +101,9 @@ curl -fsSL https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/de
 | `--host-network` | Run the container on the host's network, so SNMP leaves exactly as from the host. Use it when the host reaches the devices but discovery in Zirox fails with "no route to host" or timeouts (firewall or routing rules that do not cover Docker's bridge network). `--bridge-network` switches back. The choice is kept on upgrades. |
 | `--systemd` | Install the binary as a systemd service instead of Docker (the default when Docker is not running). |
 | `--version vX.Y.Z` | Install a specific release instead of the latest, e.g. to roll back. |
+| `--https` | Serve the UI, `/sd` and `/probe` over HTTPS with a self-signed certificate that Zirox makes (see "HTTPS" below). |
+| `--tls-cert FILE --tls-key FILE` | HTTPS with your own certificate (PEM, chain first). The files are copied to `/etc/zirox/tls`. |
+| `--no-https` | Back to plain HTTP. HTTPS settings are otherwise kept on upgrades. |
 | `--uninstall` | Remove the container or the service. Data and settings are kept. |
 
 **Upgrade:** run the same command again. The database, key, settings, port and network mode are kept.
@@ -209,7 +212,9 @@ A release is built automatically when a tag is pushed (`git tag v0.2.0 && git pu
 | `ZIROX_SCRAPE_TOKEN` | — | Require `Authorization: Bearer <token>` on `/probe`, `/sd`, `/metrics` |
 | `ZIROX_SD_ADDRESS` | Host of the request | `host:port` Prometheus uses to reach the exporter |
 | `ZIROX_COOKIE_SECURE` | — | `1` if the UI is served over HTTPS |
-| `ZIROX_TLS_CERT`, `ZIROX_TLS_KEY` | — | Serve HTTPS directly from the exporter |
+| `ZIROX_TLS` | — | `self-signed`: serve HTTPS with a certificate Zirox makes and keeps in `data/tls/` |
+| `ZIROX_TLS_HOSTS` | — | Extra names and addresses (comma-separated) for the self-signed certificate; the installer fills in the host's |
+| `ZIROX_TLS_CERT`, `ZIROX_TLS_KEY` | — | Serve HTTPS with your certificate (PEM). Reloaded within a minute when the files change, so a renewal needs no restart |
 | `ZIROX_MAX_POLLS` | `128` | Concurrent polls |
 | `ZIROX_MAX_DISCOVERY` | `32` | Concurrent full walks |
 | `ZIROX_UPDATE_CHECK` | on | `0` = do not check GitHub for a newer release (the UI shows "vX.Y.Z available" when there is one) |
@@ -398,9 +403,32 @@ curl -H "$H" http://zirox:9116/api/v1/credentials           # names and versions
 
 When creating a device you can pass `"version":"2c","community":"..."` instead of `credential`. A new device gets a full walk right away. In `selection`, objects are named by key (port or sensor name, as in the `key` field) or by `id`; objects not named are left as they are. All changes through the API are logged as `api:<token name>`.
 
+## HTTPS
+
+Turn it on with the installer (`... | sudo sh -s -- --https`, add your usual `--port`/`--host-network`), then open `https://<server>:<port>`.
+
+- **Self-signed** (`--https`): Zirox makes a certificate for the host's name and addresses (valid 10 years, made again when a name is missing or it is about to expire). The browser warns once; compare the SHA-256 on the Prometheus page or in the log with what the browser shows. Download it from `/tls/cert.pem` to trust it on your PC or in Prometheus.
+- **Your own** (`--tls-cert zirox.crt --tls-key zirox.key`): from your internal CA or a public one. Replace the files in `/etc/zirox/tls/` to renew; Zirox picks them up within a minute.
+
+Over HTTPS the session cookie is `Secure`, and service discovery hands Prometheus `__scheme__="https"`, so the targets are scraped over HTTPS too. Prometheus needs to trust the certificate:
+
+```yaml
+scrape_configs:
+  - job_name: zirox-snmp
+    tls_config:
+      ca_file: /etc/prometheus/zirox.crt     # /tls/cert.pem, or your internal CA
+    http_sd_configs:
+      - url: https://<zirox-server>:9116/sd
+        tls_config:
+          ca_file: /etc/prometheus/zirox.crt
+```
+
+The address in the URL must be one the certificate names. With Prometheus in a container, mount the file into it. The Prometheus page in the UI shows this config with your address filled in.
+
 ## Security
 
-- UI login with username and password (bcrypt), session in a signed cookie (`HttpOnly`, `SameSite=Strict`); cross-site POST requests are rejected.
+- HTTPS with a self-signed or your own certificate (see "HTTPS"), TLS 1.2 or newer.
+- UI login with username and password (bcrypt), session in a signed cookie (`HttpOnly`, `SameSite=Strict`, `Secure` over HTTPS); cross-site POST requests are rejected.
 - Login throttling: after 5 wrong passwords in 15 minutes from one address, or for one user name, logins from that address and for that name are refused for 15 minutes (also with the right password), and the change log records "login blocked". Sessions last 12 hours; changing a user's password or role ends that user's sessions.
 - Every page is sent with a strict Content-Security-Policy (scripts only from Zirox itself, no framing), `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin`.
 - API tokens expire after 30 days, 90 days or a year (chosen when created; "never" is still possible). An expired token gets `401` with the date it expired.

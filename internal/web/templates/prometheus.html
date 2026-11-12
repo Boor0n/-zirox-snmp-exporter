@@ -2,11 +2,23 @@
 <h1>Connecting Prometheus</h1>
 <p>Prometheus learns the device list and each device's interval through HTTP Service Discovery. After you add a device here, nothing needs to change in Prometheus. Prometheus never talks to the devices: it reads the latest values from the exporter's memory.</p>
 <h2>prometheus.yml</h2>
-<pre class="code">scrape_configs:
+{{if .HTTPS}}<pre class="code">scrape_configs:
+  - job_name: zirox-snmp
+    tls_config:
+      ca_file: /etc/prometheus/zirox.crt
+    http_sd_configs:
+      - url: {{.Base}}/sd
+        refresh_interval: 60s
+        tls_config:
+          ca_file: /etc/prometheus/zirox.crt</pre>
+<p>Zirox serves HTTPS{{if .SelfSigned}} with a <b>self-signed</b> certificate it made itself{{end}}; the service discovery tells Prometheus to scrape the targets over HTTPS too. {{if .SelfSigned}}Save <a href="/tls/cert.pem">the certificate</a> as <code>/etc/prometheus/zirox.crt</code> (in a container: next to <code>prometheus.yml</code>, mounted into it) so Prometheus can check it{{else}}If your certificate is signed by an internal CA that the Prometheus server does not trust, put that CA's certificate in <code>ca_file</code>; with a public CA leave <code>tls_config</code> out{{end}}. The address in the URL must be one the certificate names{{if .SelfSigned}} (the host name and the server's addresses; more with ZIROX_TLS_HOSTS){{end}}.</p>
+<p class="muted small">Certificate SHA-256: <code>{{.Fingerprint}}</code>, valid until {{.NotAfter.Format "2006-01-02"}}. Compare it with what your browser shows before you accept the certificate the first time. Quick and less safe instead of <code>ca_file</code>: <code>insecure_skip_verify: true</code>.</p>
+{{else}}<pre class="code">scrape_configs:
   - job_name: zirox-snmp
     http_sd_configs:
       - url: {{.Base}}/sd
         refresh_interval: 60s</pre>
+<p class="muted small">Zirox speaks plain HTTP. To turn on HTTPS, run the installer with <code>--https</code> (self-signed certificate) or <code>--tls-cert FILE --tls-key FILE</code>.</p>{{end}}
 <p class="muted small">If ZIROX_SCRAPE_TOKEN is set, add <code>authorization: {credentials: "&lt;token&gt;"}</code> both to <code>http_sd_configs</code> and to the job itself.</p>
 <p>Each device becomes its own target with the labels <code>instance</code>, <code>device</code>, <code>group</code>, <code>address</code>, <code>sysName</code>. The scrape interval (<code>__scrape_interval__</code>) equals the device's poll interval.</p>
 <h2>Alternative: one target with all devices</h2>

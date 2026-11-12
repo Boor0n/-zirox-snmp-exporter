@@ -111,10 +111,14 @@ func (x *Exporter) sd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	addr := x.SDAddress
+	scheme, defPort := "http", "80"
+	if r.TLS != nil {
+		scheme, defPort = "https", "443"
+	}
 	if addr == "" {
 		addr = r.Host
 		if _, _, err := net.SplitHostPort(addr); err != nil {
-			addr = net.JoinHostPort(addr, "80")
+			addr = net.JoinHostPort(addr, defPort)
 		}
 	}
 	out := []sdTarget{}
@@ -128,6 +132,7 @@ func (x *Exporter) sd(w http.ResponseWriter, r *http.Request) {
 			Targets: []string{addr},
 			Labels: map[string]string{
 				"__metrics_path__":    "/probe",
+				"__scheme__":          scheme,
 				"__param_target":      strconv.FormatInt(d.ID, 10),
 				"__scrape_interval__": fmt.Sprintf("%ds", int(eff.Interval.Seconds())),
 				"__scrape_timeout__":  fmt.Sprintf("%ds", int(timeout.Seconds())),
@@ -145,6 +150,7 @@ func (x *Exporter) sd(w http.ResponseWriter, r *http.Request) {
 				Targets: []string{addr},
 				Labels: map[string]string{
 					"__metrics_path__":    "/probe",
+					"__scheme__":          scheme,
 					"__param_target":      strconv.FormatInt(d.ID, 10),
 					"__param_poll":        "fast",
 					"__scrape_interval__": fmt.Sprintf("%ds", int(eff.Fast.Seconds())),
