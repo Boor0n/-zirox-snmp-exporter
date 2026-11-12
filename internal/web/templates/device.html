@@ -51,9 +51,20 @@
 {{end}}
 
 {{if .Wizard}}{{template "stepper" 3}}{{end}}
+<div class="card hist">
+  <h3>Availability, last 24 hours</h3>
+  {{template "history" .History}}
+</div>
+
 {{if .Groups}}
+<nav class="tabs" role="tablist" aria-label="Device sections" data-tabs>
+  {{with index .Tabs "ports"}}<a href="#tab-ports" role="tab" data-tab="ports">Ports <span class="muted small">{{.}}</span></a>{{end}}
+  {{with index .Tabs "health"}}<a href="#tab-health" role="tab" data-tab="health">Health <span class="muted small">{{.}}</span></a>{{end}}
+  {{with index .Tabs "other"}}<a href="#tab-other" role="tab" data-tab="other">Other <span class="muted small">{{.}}</span></a>{{end}}
+  <a href="/devices/{{$d.ID}}/diagnose">Diagnostics</a>
+</nav>
 {{if .CanEdit}}<p class="muted small hint">Tick what Zirox should poll and press <b>Apply</b>. Click a row to tick it; Shift+click ticks a range.</p>{{end}}
-<form method="post" action="/devices/{{$d.ID}}/selection" id="sel">
+<form method="post" action="/devices/{{$d.ID}}/selection" id="sel" data-live="/devices/{{$d.ID}}/live">
   <div class="toolbar sticky">
     <input type="search" placeholder="Filter: name, description" aria-label="Filter objects" data-filter-text>
     <label class="check"><input type="checkbox" data-filter-up> up only</label>
@@ -64,31 +75,30 @@
     {{if .CanEdit}}<button type="button" data-select-visible="1">Select visible</button>
     <button type="button" data-select-visible="0">Clear visible</button>
     <span class="badge warn" data-dirty hidden>Unsaved changes</span>
-    <button class="primary">Apply</button>{{end}}
+    <button class="primary" data-apply>Apply</button>{{end}}
   </div>
-  {{range .Groups}}
+  {{range .Groups}}{{$g := .}}
+  <section class="tabpanel" data-panel="{{.Tab}}" id="tab-{{.Tab}}-{{.Category}}">
   <h2>{{.Category}} <span class="muted small"><span data-group-count>{{.Selected}}</span> of {{len .Objects}} selected</span></h2>
   <div class="table-wrap"><table class="list objects">
     <thead><tr>
       <th class="w1"><input type="checkbox" data-check-group aria-label="Select all {{.Category}}" {{if not $.CanEdit}}disabled{{end}}></th>
       <th>Name</th>{{if .HasDescr}}<th>Description</th>{{end}}
-      {{if eq .Category "Ports"}}<th>Type</th><th>Speed</th><th>Status</th>{{end}}
+      {{if eq .Category "Ports"}}<th>Type</th><th>Speed</th><th>Status</th><th class="num">In</th><th class="num">Out</th><th class="num">Load</th><th class="num">Errors</th>{{end}}
       <th></th>
     </tr></thead>
-    <tbody>
-    {{$hd := .HasDescr}}{{range .Objects}}
-    <tr class="obj {{.State}}" data-up="{{if eq .OperStatus 1}}1{{end}}" data-phys="{{if or (ne .Kind "if") (physical .IfType)}}1{{end}}">
-      <td><input type="checkbox" name="obj" value="{{.ID}}" aria-label="Poll {{.Name}}" {{if .Selected}}checked{{end}} {{if not $.CanEdit}}disabled{{end}}></td>
-      <td><b>{{.Name}}</b>{{if eq .Kind "if"}} <span class="muted small">#{{.Idx}}</span>{{end}}</td>
-      {{if $hd}}<td>{{.Alias}}{{if and .Alias (ne .Descr .Name)}} · {{end}}{{if ne .Descr .Name}}<span class="muted">{{.Descr}}</span>{{end}}</td>{{end}}
-      {{if eq .Kind "if"}}<td>{{iftype .IfType}}</td><td>{{speed .SpeedMbps}}</td><td><span class="oper o{{.OperStatus}}"><span class="dot" aria-hidden="true"></span>{{oper .OperStatus}}</span></td>{{end}}
-      <td>{{if eq .State "new"}}<span class="badge new">new</span>{{else if eq .State "missing"}}<span class="badge bad">gone</span>{{end}}</td>
-    </tr>
+    {{if .Modules}}
+      {{range .Modules}}<tbody class="module">
+      <tr class="modrow"><th colspan="{{if $g.HasDescr}}11{{else}}10{{end}}"><label class="check"><input type="checkbox" data-check-module aria-label="Select all of {{.Name}}" {{if not $.CanEdit}}disabled{{end}}> {{.Name}}</label> <span class="muted small">{{len .Objects}} ports</span></th></tr>
+      {{range .Objects}}{{template "objrow" (list2 $ $g .)}}{{end}}
+      </tbody>{{end}}
+    {{else}}
+      <tbody>{{range .Objects}}{{template "objrow" (list2 $ $g .)}}{{end}}</tbody>
     {{end}}
-    </tbody>
   </table></div>
+  </section>
   {{end}}
-  {{if .CanEdit}}<div class="buttons"><button class="primary">Apply</button></div>{{end}}
+  {{if .CanEdit}}<div class="buttons"><button class="primary" data-apply>Apply</button></div>{{end}}
 </form>
 {{else if not .Discovering}}
 <div class="card empty">No objects found yet. Press <b>Refresh</b> to walk the whole device.</div>
@@ -96,3 +106,18 @@
 <div class="card empty">Full discovery is running; the page will refresh by itself…</div>
 {{end}}
 {{end}}
+
+
+{{define "objrow"}}{{$ := index . 0}}{{$g := index . 1}}{{$o := index . 2}}
+<tr class="obj {{$o.State}}" data-up="{{if eq $o.OperStatus 1}}1{{end}}" data-phys="{{if or (ne $o.Kind "if") (physical $o.IfType)}}1{{end}}" data-obj="{{$o.ID}}">
+  <td><input type="checkbox" name="obj" value="{{$o.ID}}" aria-label="Poll {{$o.Name}}" {{if $o.Selected}}checked{{end}} {{if not $.CanEdit}}disabled{{end}}></td>
+  <td><b class="mono">{{$o.Name}}</b>{{if eq $o.Kind "if"}} <span class="muted small">#{{$o.Idx}}</span>{{end}}</td>
+  {{if $g.HasDescr}}<td>{{$o.Alias}}{{if and $o.Alias (ne $o.Descr $o.Name)}} · {{end}}{{if ne $o.Descr $o.Name}}<span class="muted">{{$o.Descr}}</span>{{end}}</td>{{end}}
+  {{if eq $o.Kind "if"}}<td>{{iftype $o.IfType}}</td><td>{{speed $o.SpeedMbps}}</td><td><span class="oper o{{$o.OperStatus}}"><span class="dot" aria-hidden="true"></span>{{oper $o.OperStatus}}</span></td>
+  {{$r := rate $.Rates $o.ID}}
+  <td class="num mono rin" data-live-in>{{if $r}}{{bits $r.InBps}}{{else}}<span class="muted">—</span>{{end}}</td>
+  <td class="num mono rout" data-live-out>{{if $r}}{{bits $r.OutBps}}{{else}}<span class="muted">—</span>{{end}}</td>
+  <td class="num" data-live-util>{{if and $r (ge $r.Util 0.0)}}<span class="load{{if ge $r.Util 90.0}} crit{{else if ge $r.Util 70.0}} hi{{end}}" style="--p:{{pct $r.Util}}%"><span>{{pct $r.Util}}%</span></span>{{else}}<span class="muted">—</span>{{end}}</td>
+  <td class="num mono" data-live-err>{{if $r}}{{with errrate $r.ErrPerMin}}<span class="bad">{{.}}</span>{{end}}{{end}}</td>{{end}}
+  <td>{{if eq $o.State "new"}}<span class="badge new">new</span>{{else if eq $o.State "missing"}}<span class="badge bad">gone</span>{{end}}</td>
+</tr>{{end}}

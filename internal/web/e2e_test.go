@@ -181,7 +181,7 @@ func TestEndToEnd(t *testing.T) {
 	if !strings.Contains(card, "<title>core-nx-01 · Zirox SNMP</title>") || !strings.Contains(card, "data-sel-count") {
 		t.Error("device card lacks its tab title or the live selection counter")
 	}
-	if _, list := e.get("/?status=ok"); !strings.Contains(list, "<title>Devices · Zirox SNMP</title>") ||
+	if _, list := e.get("/devices?status=ok"); !strings.Contains(list, "<title>Devices · Zirox SNMP</title>") ||
 		!strings.Contains(list, "data-sortable") || !strings.Contains(list, `class="stat st-ok on"`) {
 		t.Error("device list lacks its title, sortable columns or the active status chip")
 	}
@@ -279,6 +279,36 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if creds, _ := e.st.Credentials(); len(creds) != 1 {
 		t.Errorf("identical community should reuse the credential, have %d", len(creds))
+	}
+
+	// Overview, global search and live port numbers.
+	if _, page := e.get("/"); !strings.Contains(page, "<h1>Overview</h1>") || !strings.Contains(page, "Needs attention") || !strings.Contains(page, "device added") {
+		t.Error("overview lacks its sections or recent events")
+	}
+	if _, page := e.get("/search?q=Ethernet1/40"); !strings.Contains(page, "core-nx-01") || !strings.Contains(page, "Ethernet1/40") {
+		t.Error("search did not find the port")
+	}
+	if r, err := e.c.Get(e.srv.URL + "/search?q=10.0.0.1"); err != nil || !strings.HasSuffix(r.Request.URL.Path, "/devices/1") {
+		t.Error("an exact device address should open the device")
+	}
+	if _, body := e.get("/devices/1/live"); !strings.Contains(body, `"ok":true`) || !strings.Contains(body, `"ports":{`) {
+		t.Errorf("live = %s", body)
+	}
+	_, card = e.get("/devices/1")
+	if !strings.Contains(card, "data-tabs") || !strings.Contains(card, `class="avail"`) || !strings.Contains(card, "data-live-in") {
+		t.Error("device card lacks tabs, availability or live columns")
+	}
+
+	// Bulk edit: group and profile for two devices; credentials kept.
+	_, body = e.post("/devices/bulk", url.Values{"ids": {"1", "2"}, "action": {"edit"}, "set_group": {"1"}, "group": {"Core"}, "profile_id": {"0"}, "credential_id": {"keep"}})
+	if !strings.Contains(body, "Changed: 2 devices") {
+		t.Fatalf("bulk edit: %s", flash(body))
+	}
+	for _, id := range []int64{1, 2} {
+		d, _ := e.st.Device(id)
+		if d.Group != "Core" || d.ProfileID != 0 || d.CredentialID != creds[0].ID {
+			t.Errorf("bulk edit left %+v", d)
+		}
 	}
 }
 
@@ -458,7 +488,7 @@ func TestUsersRolesAndAPI(t *testing.T) {
 	// Read-only user: sees devices, cannot change them, can change own password.
 	e.post("/logout", nil)
 	e.post("/login", url.Values{"user": {"olga"}, "password": {"viewerpass1"}})
-	if code, page := e.get("/"); code != 200 || !strings.Contains(page, "sw1") || strings.Contains(page, "+ Add device") || !strings.Contains(page, "read-only") {
+	if code, page := e.get("/devices"); code != 200 || !strings.Contains(page, "sw1") || strings.Contains(page, "+ Add device") || !strings.Contains(page, "read-only") {
 		t.Fatalf("viewer device list: %d", code)
 	}
 	if code, _ := e.post(fmt.Sprintf("/devices/%d/delete", dev.ID), nil); code != 403 {

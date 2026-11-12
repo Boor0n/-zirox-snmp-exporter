@@ -46,6 +46,12 @@ type Snapshot struct {
 	// Shifted lists ports whose ifIndex moved; their values are withheld
 	// until the automatic Refresh maps them again.
 	Shifted []string
+	// Prev and PrevAt are the samples of the previous successful poll, to
+	// turn counters into rates for the UI.
+	Prev   []snmpx.Sample
+	PrevAt time.Time
+	// DownSince is when the device stopped answering (zero while it answers).
+	DownSince time.Time
 }
 
 // autoFixPause is the shortest time between two automatic refreshes of one
@@ -107,6 +113,7 @@ type Engine struct {
 	running   map[int64]bool // discovery in progress
 	autoTried map[int64]time.Time
 	autoFixed map[int64]time.Time // last reboot/shift triggered refresh
+	history   map[int64]*availability
 	wg        sync.WaitGroup
 	discCount int
 }
@@ -141,6 +148,7 @@ func New(st *store.Store, box *secret.Box, o Options) *Engine {
 		arCheck: o.AutoRefreshCheck, now: o.Now,
 		autoTried: map[int64]time.Time{},
 		autoFixed: map[int64]time.Time{},
+		history:   map[int64]*availability{},
 		pollSem:   make(chan struct{}, o.MaxConcurrentPolls),
 		discSem:   make(chan struct{}, o.MaxConcurrentDiscovery),
 		loops:     map[int64]context.CancelFunc{},
@@ -392,6 +400,11 @@ func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
 		prev := e.Snapshot(id)
 		if prev != nil {
 			snap.LastReboot = prev.LastReboot
+			if prev.OK {
+				snap.Prev, snap.PrevAt = prev.Samples, prev.At
+			} else {
+				snap.Prev, snap.PrevAt = prev.Prev, prev.PrevAt
+			}
 		}
 		if err != nil {
 			fails++
@@ -401,11 +414,21 @@ func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
 				snap.Err += " (" + ex.Raw + ")"
 			}
 			snap.Fails = fails
+			snap.DownSince = start
 			if prev != nil {
 				snap.LastOK = prev.LastOK
+				if !prev.DownSince.IsZero() {
+					snap.DownSince = prev.DownSince
+				}
+			}
+			if fails == 1 && (prev == nil || prev.OK) {
+				_ = e.st.AddAudit("system", "device not answering", d.Name, snap.Err)
 			}
 			e.log.Warn("poll failed", "device", d.Name, "fails", fails, "err", err)
 		} else {
+			if prev != nil && !prev.OK {
+				_ = e.st.AddAudit("system", "device answers again", d.Name, "down for "+start.Sub(prev.DownSince).Round(time.Second).String())
+			}
 			fails = 0
 			snap.OK = true
 			snap.LastOK = start
@@ -431,6 +454,7 @@ func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
 			}
 			e.checkConsistency(d, prev, snap)
 		}
+		e.record(id, start, snap.OK)
 		e.mu.Lock()
 		e.snaps[id] = snap
 		e.mu.Unlock()
@@ -680,4 +704,158 @@ func (e *Engine) Identify(t snmpx.Target) (snmpx.SystemInfo, error) {
 		info.Identity = snmpx.IdentifyFromSystem(info.SysDescr, info.SysObjectID)
 	}
 	return info, err
+}
+
+// ---- availability history ----
+
+// historySlot is the width of one availability bucket; 48 of them cover a day.
+const (
+	historySlot  = 30 * time.Minute
+	historySlots = 48
+)
+
+type availability struct {
+	slot [historySlots]struct {
+		start    int64 // unix time of the bucket start, to drop stale ones
+		ok, fail int
+	}
+}
+
+func (e *Engine) record(id int64, at time.Time, ok bool) {
+	b := at.Truncate(historySlot).Unix()
+	i := int(b/int64(historySlot.Seconds())) % historySlots
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	h := e.history[id]
+	if h == nil {
+		h = &availability{}
+		e.history[id] = h
+	}
+	sl := &h.slot[i]
+	if sl.start != b {
+		sl.start, sl.ok, sl.fail = b, 0, 0
+	}
+	if ok {
+		sl.ok++
+	} else {
+		sl.fail++
+	}
+}
+
+// Bucket is the availability of a device in one half hour.
+type Bucket struct {
+	Start    time.Time
+	OK, Fail int
+}
+
+// State is "ok", "fail", "mixed" or "none" (not polled).
+func (b Bucket) State() string {
+	switch {
+	case b.OK == 0 && b.Fail == 0:
+		return "none"
+	case b.Fail == 0:
+		return "ok"
+	case b.OK == 0:
+		return "fail"
+	}
+	return "mixed"
+}
+
+// History returns the last 24 hours of a device in half-hour buckets,
+// oldest first. It is kept in memory and starts empty after a restart.
+func (e *Engine) History(id int64) []Bucket {
+	now := e.now().Truncate(historySlot)
+	out := make([]Bucket, historySlots)
+	e.mu.Lock()
+	h := e.history[id]
+	e.mu.Unlock()
+	for k := 0; k < historySlots; k++ {
+		start := now.Add(-time.Duration(historySlots-1-k) * historySlot)
+		out[k].Start = start
+		if h == nil {
+			continue
+		}
+		e.mu.Lock()
+		sl := h.slot[int(start.Unix()/int64(historySlot.Seconds()))%historySlots]
+		e.mu.Unlock()
+		if sl.start == start.Unix() {
+			out[k].OK, out[k].Fail = sl.ok, sl.fail
+		}
+	}
+	return out
+}
+
+// ---- live port rates ----
+
+// PortRate is what one port did between the last two polls.
+type PortRate struct {
+	InBps, OutBps float64 // bits per second
+	ErrPerMin     float64 // in+out errors per minute
+	Util          float64 // max(in, out) in percent of the speed, -1 if unknown
+}
+
+// PortRates turns the counters of the last two polls into rates, by object ID.
+func PortRates(s *Snapshot) map[int64]PortRate {
+	out := map[int64]PortRate{}
+	if s == nil || !s.OK || len(s.Prev) == 0 || !s.At.After(s.PrevAt) {
+		return out
+	}
+	dt := s.At.Sub(s.PrevAt).Seconds()
+	type key struct {
+		obj  int64
+		name string
+	}
+	prev := make(map[key]float64, len(s.Prev))
+	for _, p := range s.Prev {
+		prev[key{p.Obj, p.Name}] = p.Value
+	}
+	speed := map[int64]float64{}
+	delta := func(sm snmpx.Sample) (float64, bool) {
+		pv, ok := prev[key{sm.Obj, sm.Name}]
+		if !ok || sm.Value < pv {
+			return 0, false // new or wrapped/reset counter
+		}
+		return (sm.Value - pv) / dt, true
+	}
+	for _, sm := range s.Samples {
+		if sm.Obj == 0 {
+			continue
+		}
+		r, seen := out[sm.Obj]
+		if !seen {
+			r.Util = -1
+		}
+		switch sm.Name {
+		case "ifHCInOctets", "ifInOctets":
+			if v, ok := delta(sm); ok {
+				r.InBps = v * 8
+			}
+		case "ifHCOutOctets", "ifOutOctets":
+			if v, ok := delta(sm); ok {
+				r.OutBps = v * 8
+			}
+		case "ifInErrors", "ifOutErrors":
+			if v, ok := delta(sm); ok {
+				r.ErrPerMin += v * 60
+			}
+		case "ifHighSpeed":
+			speed[sm.Obj] = sm.Value * 1e6
+		case "ifSpeed":
+			if _, ok := speed[sm.Obj]; !ok {
+				speed[sm.Obj] = sm.Value
+			}
+		default:
+			if !seen {
+				continue
+			}
+		}
+		out[sm.Obj] = r
+	}
+	for id, r := range out {
+		if sp := speed[id]; sp > 0 {
+			r.Util = 100 * max(r.InBps, r.OutBps) / sp
+			out[id] = r
+		}
+	}
+	return out
 }

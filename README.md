@@ -20,6 +20,14 @@ An SNMP exporter for Prometheus with a web UI. You add devices in the browser. W
 - **Clear errors.** Failures say what happened and what to check: no answer (ACL, with the address Zirox sends from), access refused (`authorizationError`, community view, `@` in the community), unknown v3 user, wrong v3 password, no route (Docker network), and so on.
 - **Database upgrades.** The schema is versioned; before an upgrade changes it, and whenever a new Zirox version starts, a copy of the database is written to `data/backups/` (the newest 5 are kept).
 
+### Web UI
+
+- **Overview** (start page): how many devices poll fine, which do not answer or were never discovered, polls that do not fit their interval, and a "Needs attention" list (not answering, port renumbering, lost packets, failed Refresh, restarts in the last 24 hours, new ports to review). Recent changes are listed next to it.
+- **Search** (top left, or press `/`): devices by name, IP, sysName, model or serial, and ports or sensors by name and description. An exact device name or IP opens the device.
+- **Device page:** availability for the last 24 hours in half-hour blocks; tabs for Ports, Health and Other; switches with several modules show one block per module with its own "select all". Ticked ports show live In/Out in Mbit/s, load in percent of the port speed and errors per minute, refreshed once per poll interval. The Apply button shows how many ticks you are about to add or remove.
+- **Device list:** a 24-hour availability strip per device, bulk Check access / Refresh / Enable / Disable / Delete, and **Change…** to set the group, poll profile or credentials of all selected devices at once.
+- **Theme:** auto (follows the system), light or dark; **Compact tables** fits more rows on screen. Both are remembered in the browser.
+
 ### Poll interval
 
 The interval is set in seconds at three levels; the most specific wins:

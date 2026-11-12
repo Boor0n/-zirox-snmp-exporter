@@ -119,7 +119,7 @@
   [up, phys, onlySel].forEach((el) => el.addEventListener('change', apply));
   $$('[data-select-visible]', form).forEach((b) => b.addEventListener('click', () => {
     const on = b.dataset.selectVisible === '1';
-    rows.forEach((tr) => { if (!tr.hidden) tr.querySelector('input[type=checkbox]').checked = on; });
+    rows.forEach((tr) => { if (!tr.hidden && !tr.closest('[data-panel][hidden]')) tr.querySelector('input[type=checkbox]').checked = on; });
   }));
   $$('[data-check-group]', form).forEach((box) => box.addEventListener('change', () => {
     $$('tr.obj', box.closest('table')).forEach((tr) => {
@@ -187,4 +187,121 @@
     inp.addEventListener('input', check);
     check();
   });
+})();
+
+// Theme (auto / light / dark) and compact tables, remembered in this browser.
+(function () {
+  const root = document.documentElement;
+  const store = (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} };
+  const tb = document.querySelector('[data-theme-toggle]');
+  if (tb) {
+    const name = tb.querySelector('[data-theme-name]');
+    const show = () => { name.textContent = root.dataset.theme || 'auto'; };
+    tb.addEventListener('click', () => {
+      const next = { '': 'light', light: 'dark', dark: '' }[root.dataset.theme || ''];
+      if (next) root.dataset.theme = next; else delete root.dataset.theme;
+      store('zirox-theme', next || null);
+      show();
+    });
+    show();
+  }
+  const db = document.querySelector('[data-dense-toggle]');
+  if (db) {
+    const show = () => db.setAttribute('aria-pressed', root.classList.contains('dense') ? 'true' : 'false');
+    db.addEventListener('click', () => {
+      const on = root.classList.toggle('dense');
+      store('zirox-dense', on ? '1' : null);
+      show();
+    });
+    show();
+  }
+})();
+
+// Device page: tabs, module checkboxes, Apply counter and live port numbers.
+(function () {
+  const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+  const tabs = document.querySelector('[data-tabs]');
+  if (tabs) {
+    const links = $$('[data-tab]', tabs);
+    const panels = $$('[data-panel]');
+    const select = (name, focus) => {
+      links.forEach((a) => {
+        const on = a.dataset.tab === name;
+        a.setAttribute('aria-selected', on ? 'true' : 'false');
+        a.tabIndex = on ? 0 : -1;
+        if (on && focus) a.focus();
+      });
+      panels.forEach((p) => { p.hidden = p.dataset.panel !== name; });
+      try { sessionStorage.setItem('zirox-tab', name); } catch (e) {}
+    };
+    links.forEach((a, i) => {
+      a.addEventListener('click', (e) => { e.preventDefault(); select(a.dataset.tab); history.replaceState(null, '', '#tab-' + a.dataset.tab); });
+      a.addEventListener('keydown', (e) => {
+        const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+        if (d) { e.preventDefault(); select(links[(i + d + links.length) % links.length].dataset.tab, true); }
+      });
+    });
+    if (links.length) {
+      let want = (location.hash.match(/^#tab-(\w+)/) || [])[1];
+      if (!want) { try { want = sessionStorage.getItem('zirox-tab'); } catch (e) {} }
+      if (!links.some((a) => a.dataset.tab === want)) want = links[0].dataset.tab;
+      select(want);
+    }
+  }
+
+  const form = document.getElementById('sel');
+  if (!form) return;
+  $$('[data-check-module]', form).forEach((box) => box.addEventListener('change', () => {
+    $$('tr.obj', box.closest('tbody')).forEach((tr) => {
+      const c = tr.querySelector('input[name=obj]');
+      if (!tr.hidden && c && !c.disabled) c.checked = box.checked;
+    });
+    form.dispatchEvent(new Event('change'));
+  }));
+
+  // Apply buttons show how many ticks would change.
+  const boxes = $$('input[name=obj]', form);
+  const initial = boxes.map((b) => b.checked);
+  const applies = $$('[data-apply]', form);
+  const syncApply = () => {
+    let on = 0, off = 0;
+    boxes.forEach((b, i) => { if (b.checked !== initial[i]) { if (b.checked) on++; else off++; } });
+    applies.forEach((b) => {
+      b.textContent = on || off ? 'Apply (' + [on ? '+' + on : '', off ? '−' + off : ''].filter(Boolean).join(' ') + ')' : 'Apply';
+      b.classList.toggle('pending', !!(on || off));
+    });
+  };
+  form.addEventListener('change', syncApply);
+  form.addEventListener('click', () => setTimeout(syncApply, 0));
+
+  // Live numbers: refresh In/Out/Load/Errors once per poll interval.
+  const url = form.dataset.live;
+  if (!url || !form.querySelector('[data-live-in]')) return;
+  const rows = {};
+  $$('tr[data-obj]', form).forEach((tr) => { if (tr.querySelector('[data-live-in]')) rows[tr.dataset.obj] = tr; });
+  const dash = '<span class="muted">—</span>';
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  let wait = 30;
+  const tick = () => {
+    if (document.hidden) { setTimeout(tick, 5000); return; }
+    fetch(url, { credentials: 'same-origin', cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        wait = Math.min(Math.max(d.interval || 30, 5), 300);
+        Object.keys(rows).forEach((id) => {
+          const tr = rows[id], p = d.ports[id];
+          tr.querySelector('[data-live-in]').innerHTML = p ? esc(p.in) : dash;
+          tr.querySelector('[data-live-out]').innerHTML = p ? esc(p.out) : dash;
+          const u = tr.querySelector('[data-live-util]');
+          if (p && p.util >= 0) {
+            const pc = Math.round(p.util);
+            u.innerHTML = '<span class="load' + (pc >= 90 ? ' crit' : pc >= 70 ? ' hi' : '') + '" style="--p:' + pc + '%"><span>' + pc + '%</span></span>';
+          } else u.innerHTML = dash;
+          tr.querySelector('[data-live-err]').innerHTML = p && p.err ? '<span class="bad">' + esc(p.err) + '</span>' : '';
+        });
+      })
+      .catch(() => { wait = 60; })
+      .finally(() => setTimeout(tick, wait * 1000));
+  };
+  setTimeout(tick, 5000);
 })();

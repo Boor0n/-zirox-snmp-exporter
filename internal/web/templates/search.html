@@ -1,0 +1,15 @@
+{{define "content"}}
+<h1>Search{{with .SearchQ}}: “{{.}}”{{end}}</h1>
+{{if not .SearchQ}}<p class="muted">Type a device name, IP address, sysName, model, port name or port description in the box on the left. Press <kbd>/</kbd> from any page.</p>
+{{else}}
+<h2>Devices <span class="muted small">{{len .Devices}}</span></h2>
+{{if .Devices}}<div class="table-wrap"><table class="list"><tbody>
+{{range .Devices}}<tr><td><a href="/devices/{{.ID}}"><b>{{.Name}}</b></a></td><td class="mono">{{.Address}}</td><td>{{.Group}}</td><td>{{.Model}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p class="muted">No device matches.</p>{{end}}
+<h2>Ports and sensors <span class="muted small">{{len .Objects}}{{if ge (len .Objects) 200}}+ (first 200){{end}}</span></h2>
+{{if .Objects}}<div class="table-wrap"><table class="list"><thead><tr><th>Device</th><th>Name</th><th>Description</th><th>Status</th><th>Polled</th></tr></thead><tbody>
+{{range .Objects}}<tr><td><a href="/devices/{{.DeviceID}}">{{.DeviceName}}</a></td><td class="mono">{{.Name}}</td><td>{{.Alias}}</td>
+<td>{{if eq .Kind "if"}}<span class="oper o{{.OperStatus}}"><span class="dot" aria-hidden="true"></span>{{oper .OperStatus}}</span>{{end}}</td><td>{{if .Selected}}yes{{else}}<span class="muted">no</span>{{end}}</td></tr>{{end}}
+</tbody></table></div>{{else}}<p class="muted">No port or sensor matches.</p>{{end}}
+{{end}}
+{{end}}
