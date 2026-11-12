@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/Boor0n/zirox-snmp-exporter/internal/secret"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/snmpx"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/store"
+	"github.com/Boor0n/zirox-snmp-exporter/internal/tlsx"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/web"
 )
 
@@ -127,7 +129,18 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	ui, err := web.New(st, en, box, web.Config{CookieSecure: os.Getenv("ZIROX_COOKIE_SECURE") == "1", Version: version, SecretKey: fileKey}, log)
+	tl, err := tlsx.Load(os.Getenv("ZIROX_TLS"), os.Getenv("ZIROX_TLS_CERT"), os.Getenv("ZIROX_TLS_KEY"), dataDir,
+		strings.FieldsFunc(os.Getenv("ZIROX_TLS_HOSTS"), func(r rune) bool { return r == ',' || r == ' ' }))
+	if err != nil {
+		return err
+	}
+	// Over HTTPS the session cookie is Secure unless explicitly turned off.
+	cookieSecure := os.Getenv("ZIROX_COOKIE_SECURE") == "1" || (tl != nil && os.Getenv("ZIROX_COOKIE_SECURE") != "0")
+	wcfg := web.Config{CookieSecure: cookieSecure, Version: version, SecretKey: fileKey}
+	if tl != nil {
+		wcfg.TLSCertFile, wcfg.TLSSelfSigned, wcfg.TLSFingerprint, wcfg.TLSNotAfter = tl.CertFile, tl.SelfSigned, tl.Fingerprint, tl.NotAfter
+	}
+	ui, err := web.New(st, en, box, wcfg, log)
 	if err != nil {
 		return err
 	}
@@ -148,13 +161,17 @@ func run(log *slog.Logger) error {
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	if tl != nil {
+		srv.TLSConfig = tl.Config
+	}
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", srv.Addr, "version", version)
-		cert, keyFile := os.Getenv("ZIROX_TLS_CERT"), os.Getenv("ZIROX_TLS_KEY")
-		if cert != "" && keyFile != "" {
-			errc <- srv.ListenAndServeTLS(cert, keyFile)
+		if tl != nil {
+			log.Info("listening with HTTPS", "addr", srv.Addr, "version", version, "self_signed", tl.SelfSigned,
+				"cert", tl.CertFile, "sha256", tl.Fingerprint, "expires", tl.NotAfter.Format("2006-01-02"))
+			errc <- srv.ListenAndServeTLS("", "") // the certificate comes from TLSConfig
 		} else {
+			log.Info("listening", "addr", srv.Addr, "version", version)
 			errc <- srv.ListenAndServe()
 		}
 	}()
