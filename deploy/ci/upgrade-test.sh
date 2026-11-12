@@ -76,7 +76,8 @@ post /devices/new --data-urlencode name=ci-snmpd --data-urlencode address=127.0.
 	--data-urlencode enabled=on --data-urlencode credential_id=new --data-urlencode cred_name=ci-upgrade-cred \
 	--data-urlencode version=2c --data-urlencode community=testcomm --data-urlencode profile_id=0 ||
 	fail "add device"
-wait_probe 'zirox_poll_success 1'
+# The first poll can come before discovery has found the ports: wait for them.
+wait_probe '^ifOperStatus'
 before=$(get "/probe?target=1" | grep -c '^ifOperStatus' || true)
 [ "$before" -gt 0 ] || fail "$FROM polls no ports"
 stop
@@ -86,7 +87,7 @@ start "$NEW"
 login
 get /devices | grep -q ci-snmpd || fail "device lost"
 get /credentials | grep -q ci-upgrade-cred || fail "credential lost"
-wait_probe 'zirox_poll_success 1'
+wait_probe '^ifOperStatus'
 after=$(get "/probe?target=1" | grep -c '^ifOperStatus' || true)
 [ "$after" -eq "$before" ] || fail "polled ports changed: $before before, $after after"
 ls "$work/data/backups/"*.db >/dev/null 2>&1 || fail "no backup written before the upgrade"
