@@ -64,15 +64,35 @@ groups:
 
   - name: zirox-interfaces
     rules:
+      - alert: ZiroxUplinkDown
+        # Ports with the role "uplink" in Zirox (device page or port rules).
+        expr: ifOperStatus{role="uplink"} == 2 and ifAdminStatus == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Uplink {{ $labels.ifName }} on {{ $labels.device }} is down"
+          description: "{{ $labels.ifName }} ({{ $labels.ifAlias }}) is an uplink, admin up but operationally down."
+
       - alert: ZiroxInterfaceDown
-        # Only ports that are administratively up and selected for polling.
-        expr: ifOperStatus == 2 and ifAdminStatus == 1
+        # Only ports that are administratively up and selected for polling;
+        # uplinks have their own critical alert above.
+        expr: ifOperStatus{role!="uplink"} == 2 and ifAdminStatus == 1
         for: 2m
         labels:
           severity: warning
         annotations:
           summary: "{{ $labels.ifName }} on {{ $labels.device }} is down"
           description: "{{ $labels.ifName }} ({{ $labels.ifAlias }}) is admin up but operationally down."
+
+      - alert: ZiroxInterfaceFlapping
+        # More than 3 up/down changes seen in 10 minutes.
+        expr: changes(ifOperStatus[10m]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.ifName }} on {{ $labels.device }} is flapping"
+          description: "The port changed state {{ $value }} times in 10 minutes (only changes between polls are seen)."
 
       - alert: ZiroxInterfaceErrors
         expr: rate(ifInErrors[5m]) + rate(ifOutErrors[5m]) > 1
@@ -136,3 +156,35 @@ groups:
         annotations:
           summary: "{{ $value }} ports of {{ $labels.device }} changed ifIndex and are not exported"
           description: "Run Refresh on the device in Zirox and check the discovery error."
+
+      - alert: ZiroxPollTooSlow
+        # A poll that takes most of its interval delays the next one.
+        expr: zirox_poll_duration_seconds > 0.8 * zirox_poll_interval_seconds
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Polling {{ $labels.device }} takes {{ $value | humanizeDuration }}, close to its interval"
+          description: "Untick ports nobody looks at, give the device a longer interval, or check the SNMP agent's CPU."
+
+  - name: zirox-servers
+    rules:
+      - alert: ZiroxDellHardware
+        # IDRAC-MIB status: 3=ok, 4=nonCritical, 5=critical, 6=nonRecoverable.
+        expr: zirox_dell_status > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.component }} {{ $labels.name }} on {{ $labels.device }} reports status {{ $value }}"
+          description: "Dell iDRAC status 4=nonCritical, 5=critical, 6=nonRecoverable. Check the iDRAC log."
+
+      - alert: ZiroxHPHardware
+        # CPQHLTH-MIB condition: 2=ok, 3=degraded, 4=failed.
+        expr: zirox_hp_condition > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.component }} {{ $labels.name }} on {{ $labels.device }} reports condition {{ $value }}"
+          description: "HPE iLO condition 3=degraded, 4=failed. Check the iLO Integrated Management Log."

@@ -150,7 +150,7 @@ scrape_configs:
 
 Prometheus gets every device as a separate target, with its own poll interval. New devices appear without editing the config. Check **Status → Targets** in Prometheus: the `zirox-snmp` targets should be UP. The **Prometheus** page in the Zirox UI shows the same config with your server's address filled in. More in the "Prometheus" section below.
 
-Optionally import `deploy/grafana-dashboard.json` into Grafana and add `deploy/alerts.yml` to Prometheus (see "Grafana" and "Alerts").
+Optionally upload the dashboards to Grafana with `deploy/grafana/upload.sh` and add `deploy/alerts.yml` to Prometheus (see "Grafana" and "Alerts").
 
 ### Troubleshooting
 
@@ -264,7 +264,7 @@ BGP peers (BGP4-MIB, IPv4): `zirox_bgp_peer_state` (6 = established), `zirox_bgp
 
 Port descriptions: `zirox_if_info{ifIndex, ifName, ifDescr, ifAlias, role}` = 1, with the live `ifAlias` read at every poll. Join it to traffic for the current description: `rate(ifHCInOctets[5m]) * on(device, ifIndex) group_left(ifAlias) zirox_if_info`.
 
-Internal: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_poll_partial`, `zirox_poll_requests_failed`, `zirox_ports_index_shifted`, `zirox_device_uptime_seconds`, `zirox_device_last_restart_timestamp_seconds`, `zirox_fast_poll_success`, `zirox_fast_poll_duration_seconds`, `zirox_fast_poll_interval_seconds` (uplink target), `zirox_device_info` (labels `sysName`, `sysDescr`, `sysObjectID`, `model`, `version`, `serial`).
+Internal: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_poll_partial`, `zirox_poll_requests_failed`, `zirox_ports_index_shifted`, `zirox_device_uptime_seconds`, `zirox_device_last_restart_timestamp_seconds`, `zirox_device_last_discovery_timestamp_seconds`, `zirox_fast_poll_success`, `zirox_fast_poll_duration_seconds`, `zirox_fast_poll_interval_seconds` (uplink target), `zirox_device_info` (labels `sysName`, `sysDescr`, `sysObjectID`, `model`, `version`, `serial`).
 
 Example queries:
 
@@ -276,7 +276,7 @@ zirox_poll_success == 0                             # devices that do not answer
 
 ### Alerts
 
-`deploy/alerts.yml` has ready Prometheus rules: device not answering for 5 minutes, CPU > 90 %, memory > 90 %, temperature > 70 °C, PSU/fan/sensor problem (CISCO-ENVMON), disk > 90 % full, port down while admin up, port errors, port utilization > 90 %, BGP peer not established, device restarted, SNMP packets lost in most polls, ports renumbered and not fixed by the automatic Refresh. Adjust the thresholds to your needs.
+`deploy/alerts.yml` has ready Prometheus rules: device not answering for 5 minutes, CPU > 90 %, memory > 90 %, temperature > 70 °C, PSU/fan/sensor problem (CISCO-ENVMON), Dell iDRAC or HPE iLO component not ok, disk > 90 % full, **uplink down** (critical, after 1 minute, for ports with the role `uplink`), other port down while admin up, port flapping (more than 3 changes in 10 minutes), port errors, port utilization > 90 %, BGP peer not established, device restarted, SNMP packets lost in most polls, poll taking over 80 % of its interval, ports renumbered and not fixed by the automatic Refresh. Adjust the thresholds to your needs.
 
 ```yaml
 rule_files:
@@ -285,18 +285,53 @@ rule_files:
 
 Check: `promtool check rules deploy/alerts.yml && promtool test rules deploy/alerts_test.yml`.
 
+**Notifications through Grafana.** Once Prometheus loads the rules, Grafana shows them under Alerting → Alert rules as data source-managed rules. To send them to Telegram, e-mail or Teams through Grafana contact points, convert them in Grafana 12: Alerting → Alert rules → More → Import to Grafana-managed rules, pick the Prometheus data source and the `zirox-*` groups. Import again after upgrading Zirox to pick up changed rules. Without Grafana, Prometheus sends them to an Alertmanager as usual.
+
 ## Grafana
 
-`deploy/grafana-dashboard.json` is the "Zirox SNMP" dashboard. Import: Grafana → Dashboards → New → Import → upload the file, pick the Prometheus data source. If a dashboard with the same name already exists, choose "Import (Overwrite)". Filters at the top: group, device (one at a time), and the ports drawn on the traffic graph. Sections:
+Four linked dashboards in `deploy/grafana/`, all in a "Zirox" folder:
 
-- **Overview** (for the selected groups): number of devices, how many do not answer, ports down, hardware problems, total traffic; a table of all devices with status, CPU, temperature, ports and traffic (click a device name to open it); top 10 ports by traffic and by load; a list of ports that are down; a graph of total traffic per device;
-- **Device**: status, CPU, memory and temperature gauges, ports up/down, traffic in/out; a traffic graph for the ports picked in the filter, download in shades of green and upload in shades of turquoise (idle ports are hidden, the legend is sortable by mean/max/last); the total of the picked ports with its 95th percentile and peak (the usual numbers for capacity planning and ISP billing); load and errors of all ports; load in % of port speed and errors/discards per minute; a table of all ports with status, speed, in/out in Mbit/s, load and errors in the last hour;
-- **Health**: CPU, memory, temperature, disks, PSU and fan state;
-- **Firewall and routing** (collapsed): ASA connections and VPN sessions, a table of BGP peers.
+| Dashboard | Shows |
+| --- | --- |
+| **Zirox NOC** (`zirox-noc`) | Every device of the chosen groups: counters, a device table, top ports by traffic and load, ports down. Click a device or a port to drill down. |
+| **Zirox device** (`zirox-device`) | One device: status, gauges, traffic, 95th percentile, all ports, health (CPU, memory, temperature, disks, Cisco/Dell/HPE hardware state), firewall and BGP. Click a port to open it. |
+| **Zirox port** (`zirox-port`) | One port: status, speed, traffic (download above, upload below the axis), load, peak and 95th percentile over the range, packets, errors, link flaps. |
+| **Zirox health** | Zirox itself: devices failing, partial and too slow polls, uplink polls, the slowest devices, memory, series in Prometheus. |
+
+The device and port dashboards mark **device restarts** (red) and **Zirox refreshes** (blue) on the time axis, so a traffic drop next to a reboot or a re-discovery explains itself.
+
+Upload or update them with one command (a Grafana service account token with the Editor role; Administration → Users and access → Service accounts):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Boor0n/-zirox-snmp-exporter/main/deploy/grafana/upload.sh |
+  GRAFANA_URL=http://127.0.0.1:3000 GRAFANA_TOKEN=glsa_... sh
+```
+
+Or import the four JSON files by hand: Dashboards → New → Import. Pick the data source in the selector at the top of each dashboard; Prometheus and VictoriaMetrics both work.
+
+The panels come from `deploy/grafana-dashboard.json`, the older single "Zirox SNMP" dashboard with the same content in sections, which keeps working on its own. After changing it, run `python3 deploy/grafana/build.py`; CI checks that the generated files are current and that every query parses.
 
 Traffic is shown in Mbit/s and switches to Gbit/s automatically. Rates use a 5 minute window, so graphs work with any poll interval up to 2 minutes.
 
 Since the port metric names match the standard snmp_exporter, ready dashboards from the Grafana catalog work too.
+
+## Long history: VictoriaMetrics
+
+Prometheus keeps 15 days by default and needs a lot of memory for years of data. VictoriaMetrics stores the same series in several times less disk and memory and answers PromQL, so the dashboards and alerts stay the same. Keep Prometheus for scraping and alerts and let it copy every sample to VictoriaMetrics:
+
+```sh
+docker run -d --name victoriametrics --restart unless-stopped -p 8428:8428 \
+  -v /var/lib/victoria-metrics:/victoria-metrics-data \
+  victoriametrics/victoria-metrics:v1.102.1 -retentionPeriod=5y
+```
+
+```yaml
+# prometheus.yml
+remote_write:
+  - url: http://victoriametrics-host:8428/api/v1/write
+```
+
+Then add a Prometheus-type data source in Grafana with the URL `http://victoriametrics-host:8428` and pick it in the dashboards for long ranges. Rough disk size: 300 devices with 50 ticked ports each give about 165,000 series; at a 60 s interval that is about 40-50 GB per year in VictoriaMetrics (uplinks at 10 s add six times as much per uplink port). Prometheus can then keep a short local retention (`--storage.tsdb.retention.time=15d`).
 
 ## CSV import
 
