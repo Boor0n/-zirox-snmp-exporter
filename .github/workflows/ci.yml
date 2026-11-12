@@ -34,5 +34,8 @@ jobs:
           /tmp/promtool check rules deploy/alerts.yml
           /tmp/promtool test rules deploy/alerts_test.yml
           jq -e '.panels | length > 0' deploy/grafana-dashboard.json
+          python3 deploy/grafana/build.py && git diff --exit-code -- deploy/grafana deploy/grafana-dashboard.json
+          python3 deploy/grafana/check_exprs.py . /tmp/dash-rules.yml
+          /tmp/promtool check rules /tmp/dash-rules.yml
           sh -n deploy/install.sh
           sh -n deploy/get.sh

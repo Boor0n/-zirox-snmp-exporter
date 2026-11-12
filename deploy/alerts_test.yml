@@ -111,3 +111,62 @@ tests:
             exp_annotations:
               summary: "2 ports of sw2 changed ifIndex and are not exported"
               description: "Run Refresh on the device in Zirox and check the discovery error."
+
+  - interval: 1m
+    input_series:
+      - series: 'ifOperStatus{device="sw2",ifName="Eth1/49",ifAlias="TO_CORE",ifIndex="49",role="uplink"}'
+        values: '1 2x5'
+      - series: 'ifAdminStatus{device="sw2",ifName="Eth1/49",ifAlias="TO_CORE",ifIndex="49",role="uplink"}'
+        values: '1x6'
+      - series: 'ifOperStatus{device="sw2",ifName="Eth1/7",ifAlias="",ifIndex="7"}'
+        values: '1 2 1 2 1 2 1 1 1 1 1'
+      - series: 'zirox_poll_duration_seconds{device="sw2"}'
+        values: '55x20'
+      - series: 'zirox_poll_interval_seconds{device="sw2"}'
+        values: '60x20'
+      - series: 'zirox_dell_status{device="esx1",index="1.1",name="PS1 Status",component="psu"}'
+        values: '5x10'
+      - series: 'zirox_dell_status{device="esx1",index="0",name="system",component="system"}'
+        values: '3x10'
+      - series: 'zirox_hp_condition{device="dl1",index="0.1",name="fan 0.1",component="fan"}'
+        values: '3x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ZiroxUplinkDown
+        exp_alerts:
+          - exp_labels: {severity: critical, device: sw2, ifName: Eth1/49, ifAlias: TO_CORE, ifIndex: "49", role: uplink}
+            exp_annotations:
+              summary: "Uplink Eth1/49 on sw2 is down"
+              description: "Eth1/49 (TO_CORE) is an uplink, admin up but operationally down."
+      - eval_time: 4m
+        alertname: ZiroxInterfaceDown
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: ZiroxInterfaceFlapping
+        exp_alerts:
+          - exp_labels: {severity: warning, device: sw2, ifName: Eth1/7, ifAlias: "", ifIndex: "7"}
+            exp_annotations:
+              summary: "Eth1/7 on sw2 is flapping"
+              description: "The port changed state 6 times in 10 minutes (only changes between polls are seen)."
+      - eval_time: 16m
+        alertname: ZiroxPollTooSlow
+        exp_alerts:
+          - exp_labels: {severity: warning, device: sw2}
+            exp_annotations:
+              summary: "Polling sw2 takes 55s, close to its interval"
+              description: "Untick ports nobody looks at, give the device a longer interval, or check the SNMP agent's CPU."
+      - eval_time: 6m
+        alertname: ZiroxDellHardware
+        exp_alerts:
+          - exp_labels: {severity: warning, device: esx1, index: "1.1", name: PS1 Status, component: psu}
+            exp_annotations:
+              summary: "psu PS1 Status on esx1 reports status 5"
+              description: "Dell iDRAC status 4=nonCritical, 5=critical, 6=nonRecoverable. Check the iDRAC log."
+      - eval_time: 6m
+        alertname: ZiroxHPHardware
+        exp_alerts:
+          - exp_labels: {severity: warning, device: dl1, index: "0.1", name: fan 0.1, component: fan}
+            exp_annotations:
+              summary: "fan fan 0.1 on dl1 reports condition 3"
+              description: "HPE iLO condition 3=degraded, 4=failed. Check the iLO Integrated Management Log."
+

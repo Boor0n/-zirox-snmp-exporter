@@ -200,6 +200,9 @@ func emitDevice(ch chan<- prometheus.Metric, d store.Device, snap *engine.Snapsh
 	}
 	info := withExtra(descInfo, "zirox_device_info", "Device information from the last discovery.", infoLabels)
 	constMetric(info, prometheus.GaugeValue, 1, d.SysName, d.SysDescr, d.SysObjectID, d.Model, d.SWVersion, d.Serial)
+	if !d.LastDiscovery.IsZero() {
+		constMetric(withExtra(nil, "zirox_device_last_discovery_timestamp_seconds", "Unix time of the last full discovery (Add or Refresh).", nil), prometheus.GaugeValue, float64(d.LastDiscovery.Unix()))
+	}
 	up := 0.0
 	if snap != nil && snap.OK {
 		up = 1

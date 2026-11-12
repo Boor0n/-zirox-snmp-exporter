@@ -424,7 +424,7 @@
     {
       "type": "stat",
       "title": "Hardware problems",
-      "description": "CISCO-ENVMON sensors, fans or PSUs not in normal state.",
+      "description": "Cisco sensors not normal, Dell iDRAC components worse than ok, HPE iLO components degraded or failed.",
       "id": 6,
       "datasource": {
         "type": "prometheus",
@@ -481,7 +481,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count({__name__=~\"zirox_envmon_.+_state\", group=~\"$group\"} > 1 != 5) or vector(0)",
+          "expr": "(count({__name__=~\"zirox_envmon_.+_state\", group=~\"$group\"} > 1 != 5) or vector(0)) + (count(zirox_dell_status{group=~\"$group\"} > 3) or vector(0)) + (count(zirox_hp_condition{group=~\"$group\"} > 2) or vector(0))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -1009,7 +1009,8 @@
               "Time 8": true,
               "Time 9": true,
               "Time": true,
-              "sysName": true
+              "sysName": true,
+              "poll": true
             },
             "indexByName": {
               "Value #A": 0,
@@ -1193,7 +1194,8 @@
               "sysName": true,
               "ifIndex": true,
               "ifDescr": true,
-              "group": true
+              "group": true,
+              "poll": true
             },
             "indexByName": {
               "device": 0,
@@ -1371,7 +1373,8 @@
               "sysName": true,
               "ifIndex": true,
               "ifDescr": true,
-              "group": true
+              "group": true,
+              "poll": true
             },
             "indexByName": {
               "device": 0,
@@ -1468,7 +1471,8 @@
               "address": true,
               "sysName": true,
               "ifIndex": true,
-              "ifDescr": true
+              "ifDescr": true,
+              "poll": true
             },
             "indexByName": {
               "device": 0,
@@ -3169,7 +3173,8 @@
               "group": true,
               "device": true,
               "ifDescr": true,
-              "ifIndex": true
+              "ifIndex": true,
+              "poll": true
             },
             "indexByName": {
               "ifName": 0,
@@ -3492,8 +3497,8 @@
     },
     {
       "type": "table",
-      "title": "Hardware state (fans, power supplies, sensors)",
-      "description": "",
+      "title": "Hardware state (fans, power supplies, sensors, disks)",
+      "description": "Cisco: 1=normal, 2=warning, 3=critical, 4=shutdown, 5=notPresent, 6=notFunctioning. Dell: 3=ok, 4=nonCritical, 5=critical, 6=nonRecoverable. HPE: 2=ok, 3=degraded, 4=failed.",
       "id": 32,
       "datasource": {
         "type": "prometheus",
@@ -3575,14 +3580,39 @@
             "uid": "${datasource}"
           },
           "expr": "{__name__=~\"zirox_envmon_.+_state\", device=\"$device\"}",
-          "legendFormat": "",
-          "refId": "A",
+          "format": "table",
           "instant": true,
           "range": false,
-          "format": "table"
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "zirox_dell_status{device=\"$device\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "zirox_hp_condition{device=\"$device\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "C"
         }
       ],
       "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
         {
           "id": "organize",
           "options": {
@@ -3592,11 +3622,16 @@
               "instance": true,
               "address": true,
               "sysName": true,
-              "group": true
+              "group": true,
+              "device": true,
+              "index": true,
+              "poll": true
             },
             "renameByName": {
-              "__name__": "sensor",
-              "Value": "state"
+              "__name__": "metric",
+              "Value #A": "Cisco state",
+              "Value #B": "Dell status",
+              "Value #C": "HPE condition"
             }
           }
         }
@@ -3936,7 +3971,8 @@
                   "instance": true,
                   "address": true,
                   "sysName": true,
-                  "group": true
+                  "group": true,
+                  "poll": true
                 },
                 "indexByName": {
                   "device": 0,
