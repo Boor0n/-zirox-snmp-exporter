@@ -69,6 +69,9 @@ type Effective struct {
 	Retries      int
 	AutoSelectUp bool
 	Source       string // "device", profile name or "global"
+	// Fast is the poll interval of uplink ports, 0 when they are polled
+	// with the rest of the device.
+	Fast time.Duration
 }
 
 // Options configures the engine.
@@ -109,6 +112,7 @@ type Engine struct {
 	ctx       context.Context
 	loops     map[int64]context.CancelFunc
 	snaps     map[int64]*Snapshot
+	fastSnaps map[int64]*Snapshot
 	locks     map[int64]*sync.Mutex
 	running   map[int64]bool // discovery in progress
 	autoTried map[int64]time.Time
@@ -153,6 +157,7 @@ func New(st *store.Store, box *secret.Box, o Options) *Engine {
 		discSem:   make(chan struct{}, o.MaxConcurrentDiscovery),
 		loops:     map[int64]context.CancelFunc{},
 		snaps:     map[int64]*Snapshot{},
+		fastSnaps: map[int64]*Snapshot{},
 		locks:     map[int64]*sync.Mutex{},
 		running:   map[int64]bool{},
 	}
@@ -250,6 +255,11 @@ func (e *Engine) Resolve(d store.Device) Effective {
 		eff.Interval = time.Duration(max(d.IntervalSec, store.MinIntervalSec)) * time.Second
 		eff.Source = "device"
 	}
+	if g.FastIntervalSec > 0 {
+		if f := time.Duration(g.FastIntervalSec) * time.Second; f < eff.Interval {
+			eff.Fast = f
+		}
+	}
 	// A poll must finish well within its interval.
 	if limit := eff.Interval * 8 / 10; eff.Timeout*time.Duration(eff.Retries+1) > limit {
 		eff.Retries = 0
@@ -298,6 +308,7 @@ func (e *Engine) ReloadAll() error {
 			cancel()
 			delete(e.loops, id)
 			delete(e.snaps, id)
+			delete(e.fastSnaps, id)
 		}
 	}
 	e.mu.Unlock()
@@ -315,6 +326,7 @@ func (e *Engine) Reload(id int64) {
 			delete(e.loops, id)
 		}
 		delete(e.snaps, id)
+		delete(e.fastSnaps, id)
 		e.mu.Unlock()
 		return
 	}
@@ -338,13 +350,35 @@ func (e *Engine) reload(d store.Device, immediate bool) {
 	if e.ctx == nil || !d.Enabled || d.LastDiscovery.IsZero() {
 		if !d.Enabled {
 			delete(e.snaps, d.ID)
+			delete(e.fastSnaps, d.ID)
 		}
 		return
 	}
 	ctx, cancel := context.WithCancel(e.ctx)
 	e.loops[d.ID] = cancel
-	e.wg.Add(1)
-	go e.loop(ctx, d.ID, immediate)
+	e.wg.Add(2)
+	go e.loop(ctx, d.ID, immediate, false)
+	go e.loop(ctx, d.ID, immediate, true)
+}
+
+// isFast reports whether an object is polled by the fast loop.
+func isFast(o store.Object, eff Effective) bool {
+	return eff.Fast > 0 && o.Kind == snmpx.KindIf && o.Role == store.RoleUplink
+}
+
+func (e *Engine) snapMap(fast bool) map[int64]*Snapshot {
+	if fast {
+		return e.fastSnaps
+	}
+	return e.snaps
+}
+
+// FastSnapshot returns the latest poll of a device's uplink ports when they
+// are polled at the fast interval, or nil.
+func (e *Engine) FastSnapshot(id int64) *Snapshot {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.fastSnaps[id]
 }
 
 func (e *Engine) deviceLock(id int64) *sync.Mutex {
@@ -358,23 +392,54 @@ func (e *Engine) deviceLock(id int64) *sync.Mutex {
 	return l
 }
 
-func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
+// loop polls a device until ctx ends. The fast loop polls only the uplink
+// ports at the fast interval; the normal loop polls everything else.
+func (e *Engine) loop(ctx context.Context, id int64, immediate, fast bool) {
 	defer e.wg.Done()
 	d, err := e.st.Device(id)
 	if err != nil {
 		return
 	}
 	eff := e.Resolve(d)
-	objs, err := e.st.Objects(id)
+	all, err := e.st.Objects(id)
 	if err != nil {
 		e.log.Error("load objects", "device", d.Name, "err", err)
 		return
 	}
+	var objs []store.Object
+	for _, o := range all {
+		if isFast(o, eff) == fast {
+			objs = append(objs, o)
+		}
+	}
+	snaps := e.snapMap(fast)
+	if fast {
+		has := false
+		for _, o := range objs {
+			has = has || (o.Selected && o.State != store.StateMissing)
+		}
+		if !has {
+			e.mu.Lock()
+			delete(snaps, id)
+			e.mu.Unlock()
+			return
+		}
+		eff.Interval = eff.Fast
+		if limit := eff.Interval * 8 / 10; eff.Timeout*time.Duration(eff.Retries+1) > limit {
+			eff.Retries = 0
+			eff.Timeout = min(eff.Timeout, limit)
+		}
+	}
 	target, terr := e.Target(d, eff)
+	prevOf := func() *Snapshot {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		return snaps[id]
+	}
 
 	// Spread first polls over the interval so devices are not hit all at once.
 	wait := time.Duration(rand.Int64N(int64(eff.Interval)))
-	if snap := e.Snapshot(id); snap != nil && !snap.At.IsZero() {
+	if snap := prevOf(); snap != nil && !snap.At.IsZero() {
 		wait = max(time.Until(snap.At.Add(eff.Interval)), 0)
 	}
 	if immediate || e.noJitter {
@@ -397,7 +462,7 @@ func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
 			return
 		}
 		snap := &Snapshot{At: start, Duration: time.Since(start), Interval: eff.Interval}
-		prev := e.Snapshot(id)
+		prev := prevOf()
 		if prev != nil {
 			snap.LastReboot = prev.LastReboot
 			if prev.OK {
@@ -421,12 +486,12 @@ func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
 					snap.DownSince = prev.DownSince
 				}
 			}
-			if fails == 1 && (prev == nil || prev.OK) {
+			if !fast && fails == 1 && (prev == nil || prev.OK) {
 				_ = e.st.AddAudit("system", "device not answering", d.Name, snap.Err)
 			}
 			e.log.Warn("poll failed", "device", d.Name, "fails", fails, "err", err)
 		} else {
-			if prev != nil && !prev.OK {
+			if !fast && prev != nil && !prev.OK {
 				_ = e.st.AddAudit("system", "device answers again", d.Name, "down for "+start.Sub(prev.DownSince).Round(time.Second).String())
 			}
 			fails = 0
@@ -452,11 +517,13 @@ func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
 				}
 				e.log.Warn("partial poll", "device", d.Name, "failed", res.Failed, "requests", res.Requests, "err", res.Err)
 			}
-			e.checkConsistency(d, prev, snap)
+			e.checkConsistency(d, prev, snap, fast)
 		}
-		e.record(id, start, snap.OK)
+		if !fast {
+			e.record(id, start, snap.OK)
+		}
 		e.mu.Lock()
-		e.snaps[id] = snap
+		snaps[id] = snap
 		e.mu.Unlock()
 		wait = backoff(eff.Interval, fails)
 	}
@@ -472,9 +539,9 @@ func backoff(interval time.Duration, fails int) time.Duration {
 
 // checkConsistency notices reboots and ifIndex shifts and starts a Refresh
 // for them, at most once per autoFixPause per device.
-func (e *Engine) checkConsistency(d store.Device, prev, snap *Snapshot) {
+func (e *Engine) checkConsistency(d store.Device, prev, snap *Snapshot, fast bool) {
 	rebooted := false
-	if snap.HasUptime && prev != nil && prev.HasUptime && snap.Uptime < prev.Uptime && prev.Uptime < uptimeWrap-time.Hour {
+	if !fast && snap.HasUptime && prev != nil && prev.HasUptime && snap.Uptime < prev.Uptime && prev.Uptime < uptimeWrap-time.Hour {
 		rebooted = true
 		snap.LastReboot = snap.At.Add(-snap.Uptime)
 		e.log.Warn("device restarted", "device", d.Name, "uptime", snap.Uptime.Round(time.Second))
@@ -628,7 +695,11 @@ func (e *Engine) discover(d store.Device) error {
 	}
 	d.SysName, d.SysDescr, d.SysObjectID = info.SysName, info.SysDescr, info.SysObjectID
 	d.Model, d.SWVersion, d.Serial = info.Model, info.Version, info.Serial
-	return e.st.ApplyDiscovery(d, snmpx.Merge(old, found, eff.AutoSelectUp))
+	rules, err := e.st.PortRules()
+	if err != nil {
+		return err
+	}
+	return e.st.ApplyDiscovery(d, snmpx.MergeWithRules(old, found, eff.AutoSelectUp, rules, d.Group))
 }
 
 // Test checks that a device answers with the given credential.
@@ -792,6 +863,15 @@ type PortRate struct {
 	InBps, OutBps float64 // bits per second
 	ErrPerMin     float64 // in+out errors per minute
 	Util          float64 // max(in, out) in percent of the speed, -1 if unknown
+}
+
+// DeviceRates is PortRates of a device's normal and fast polls together.
+func (e *Engine) DeviceRates(id int64) map[int64]PortRate {
+	out := PortRates(e.Snapshot(id))
+	for k, v := range PortRates(e.FastSnapshot(id)) {
+		out[k] = v
+	}
+	return out
 }
 
 // PortRates turns the counters of the last two polls into rates, by object ID.

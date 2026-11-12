@@ -1,0 +1,54 @@
+{{define "content"}}
+<h1>Port rules</h1>
+<p class="muted">Rules tick or untick ports and set their role by a pattern on the port name or description (ifAlias), so 300 devices do not need 300 rounds of clicking. They apply to ports a discovery finds for the first time; ticks and roles you set by hand stay. Rules are checked from the top and the first match wins. Patterns are regular expressions, case-insensitive: <code>UPLINK|CORE</code>, <code>^Vlan</code>, <code>^(Gi|Te)1/1/</code>.</p>
+<p class="muted">Ports with the role <b>uplink</b> are polled {{if .Fast}}every {{.Fast}} s{{else}}with the rest of the device (the uplink interval is off){{end}}; <a href="/settings">change</a>. Every port's role is exported as the <code>role</code> label, so Grafana can filter on <code>role="uplink"</code>.</p>
+
+<div class="table-wrap"><table class="list">
+  <thead><tr><th class="w1">#</th><th>Match</th><th>Then</th><th>Group</th><th title="Ports known today that this rule is the first match for">Matches today</th><th></th></tr></thead>
+  <tbody>
+  {{range $i, $r := .Rules}}
+  <tr>
+    <td class="nowrap">{{if $.CanEdit}}<form method="post" action="/rules/{{$r.ID}}/move" class="inline"><button class="link" name="dir" value="up" aria-label="Move up" {{if eq $i 0}}disabled{{end}}>↑</button><button class="link" name="dir" value="down" aria-label="Move down">↓</button></form>{{else}}{{$i}}{{end}}</td>
+    <td><span class="muted small">{{if eq $r.Field "name"}}name{{else if eq $r.Field "alias"}}description{{else}}name or description{{end}}</span><br><code>{{$r.Pattern}}</code></td>
+    <td>{{if eq $r.Action "poll"}}<span class="badge ok">tick</span>{{else if eq $r.Action "skip"}}<span class="badge">untick</span>{{else}}<span class="muted">keep default</span>{{end}}{{with $r.Role}} <span class="badge run">{{.}}</span>{{end}}</td>
+    <td>{{with $r.Group}}{{.}}{{else}}<span class="muted">all</span>{{end}}</td>
+    <td>{{if $r.Matches}}<b>{{$r.Matches}}</b> ports on {{$r.Devices}} devices<div class="muted small">{{range $j, $e := $r.Examples}}{{if $j}}; {{end}}{{$e}}{{end}}{{if gt $r.Matches (len $r.Examples)}}; …{{end}}</div>{{else}}<span class="muted">none</span>{{end}}</td>
+    <td class="actions">{{if $.CanEdit}}<a href="/rules?edit={{$r.ID}}">Edit</a>
+      <form method="post" action="/rules/{{$r.ID}}/delete" class="inline"><button class="link danger" data-confirm="Delete this rule?">Delete</button></form>{{end}}</td>
+  </tr>
+  {{else}}
+  <tr><td colspan="6" class="empty">No rules yet. Without rules, new ports that are up are ticked and others are not.</td></tr>
+  {{end}}
+  </tbody>
+</table></div>
+<p class="muted small">{{.Ports}} ports known on all devices.</p>
+
+{{if .CanEdit}}
+{{if .Rules}}<form method="post" action="/rules/apply" class="buttons">
+  <button data-confirm="Apply the rules to every port Zirox knows? Ports a rule matches get its tick and role, also where you changed them by hand. Ports no rule matches are left alone.">Apply to existing ports</button>
+  <span class="muted small">Overrides hand-made ticks and roles on matching ports only.</span>
+</form>{{end}}
+
+<h2>{{if .Edit.ID}}Edit rule{{else}}New rule{{end}}</h2>
+<form method="post" action="/rules" class="card form inline-form">
+  <input type="hidden" name="id" value="{{.Edit.ID}}">
+  <label>Look at <select name="field">
+    <option value="any" {{if eq .Edit.Field "any"}}selected{{end}}>name or description</option>
+    <option value="name" {{if eq .Edit.Field "name"}}selected{{end}}>name (ifName)</option>
+    <option value="alias" {{if eq .Edit.Field "alias"}}selected{{end}}>description (ifAlias)</option>
+  </select></label>
+  <label>Pattern <input name="pattern" value="{{.Edit.Pattern}}" placeholder="UPLINK|CORE" required class="mono"></label>
+  <label>Then <select name="action">
+    <option value="poll" {{if eq .Edit.Action "poll"}}selected{{end}}>tick (poll)</option>
+    <option value="skip" {{if eq .Edit.Action "skip"}}selected{{end}}>untick</option>
+    <option value="" {{if eq .Edit.Action ""}}selected{{end}}>keep the default tick</option>
+  </select></label>
+  <label>Role <input name="role" value="{{.Edit.Role}}" list="rolelist" placeholder="none"></label>
+  <datalist id="rolelist">{{range .Roles}}<option value="{{.}}">{{end}}</datalist>
+  <label>Only group <input name="group" value="{{.Edit.Group}}" list="rulegroups" placeholder="all groups"></label>
+  <datalist id="rulegroups">{{range .Groups}}<option value="{{.}}">{{end}}</datalist>
+  <div class="buttons"><button class="primary">Save rule</button>{{if .Edit.ID}} <a href="/rules">Cancel</a>{{end}}</div>
+</form>
+<p class="muted small">Examples: description <code>UPLINK|TO_CORE</code> → tick, role uplink · name <code>^(Vlan|Loopback|Null)</code> → untick · description <code>SRV|ESX</code> → tick, role server.</p>
+{{end}}
+{{end}}

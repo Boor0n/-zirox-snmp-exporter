@@ -86,6 +86,7 @@ func (s *Server) settingsSave(w http.ResponseWriter, r *http.Request) {
 		AutoRefreshHours: formInt(r, "auto_refresh_hours"),
 		AutoRefreshFrom:  formInt(r, "auto_refresh_from"),
 		AutoRefreshTo:    formInt(r, "auto_refresh_to"),
+		FastIntervalSec:  formInt(r, "fast_interval_sec"),
 	}
 	if err := s.st.SaveSettings(st); err != nil {
 		redirectErr(w, r, "/settings", err)
@@ -96,8 +97,8 @@ func (s *Server) settingsSave(w http.ResponseWriter, r *http.Request) {
 	if st.AutoRefreshHours > 0 {
 		refresh = fmt.Sprintf("every %d h, %02d:00-%02d:00", st.AutoRefreshHours, st.AutoRefreshFrom, st.AutoRefreshTo)
 	}
-	s.audit(r, "settings changed", "global", fmt.Sprintf("interval %d s, timeout %d s, retries %d, auto-select up %v, scheduled refresh %s",
-		st.IntervalSec, st.TimeoutSec, st.Retries, st.AutoSelectUp, refresh))
+	s.audit(r, "settings changed", "global", fmt.Sprintf("interval %d s, timeout %d s, retries %d, auto-select up %v, uplinks %d s, scheduled refresh %s",
+		st.IntervalSec, st.TimeoutSec, st.Retries, st.AutoSelectUp, st.FastIntervalSec, refresh))
 	_ = s.en.ReloadAll()
 	redirect(w, r, "/settings", "Global settings applied")
 }

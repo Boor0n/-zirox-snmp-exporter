@@ -130,8 +130,8 @@ func TestPollOnlySelected(t *testing.T) {
 	for _, sm := range samples {
 		got[sm.Name+"/"+sm.Values[1]+"/"+last(sm.Values)] = sm.Value
 	}
-	if got["ifHCInOctets/Ethernet1/10/to Ethernet1/10"] != 10000 {
-		t.Errorf("ifHCInOctets Ethernet1/10 = %v", got["ifHCInOctets/Ethernet1/10/to Ethernet1/10"])
+	if got["ifHCInOctets/Ethernet1/10/"] != 10000 {
+		t.Errorf("ifHCInOctets Ethernet1/10 = %v", got["ifHCInOctets/Ethernet1/10/"])
 	}
 	if got["zirox_cpu_utilization_percent/Supervisor CPU/5m"] != 10 || got["zirox_cpu_utilization_percent/Supervisor CPU/1m"] != 12 {
 		t.Errorf("cpu samples wrong: %v", got)
@@ -483,5 +483,39 @@ func TestDiagnose(t *testing.T) {
 	tg.Address = "no-such-host.invalid"
 	if d = snmpx.Diagnose(tg, dialOK, silent); status(d) != "fssss" || d.Problem != snmpx.ProblemDNS {
 		t.Errorf("bad name: %s", status(d))
+	}
+}
+
+func TestMergeWithRules(t *testing.T) {
+	a := snmptest.Switch(4)
+	_, first := discover(t, a)
+	rules := store.Rules{
+		{Field: store.FieldName, Pattern: "^Vlan", Action: store.RulePoll, Role: "core"},
+		{Field: store.FieldName, Pattern: "1/3$", Action: store.RuleSkip},
+	}
+	objs := snmpx.MergeWithRules(nil, first, true, rules, "")
+	if o := find(objs, snmpx.KindIf, "Vlan10"); !o.Selected || o.Role != "core" {
+		t.Errorf("Vlan10 = %+v", o)
+	}
+	if o := find(objs, snmpx.KindIf, "Ethernet1/3"); o.Selected {
+		t.Errorf("Ethernet1/3 should be unticked by the rule")
+	}
+	if o := find(objs, snmpx.KindIf, "Ethernet1/1"); !o.Selected || o.Role != "" {
+		t.Errorf("Ethernet1/1 = %+v", o)
+	}
+	// Hand-made changes survive the next discovery; rules only touch new ports.
+	for i := range objs {
+		if objs[i].Key == "Vlan10" {
+			objs[i].Role, objs[i].Selected = "", false
+		}
+	}
+	snmptest.AddPort(a, 20, "Vlan20", 136, true)
+	_, second := discover(t, a)
+	merged := snmpx.MergeWithRules(objs, second, true, rules, "")
+	if o := find(merged, snmpx.KindIf, "Vlan10"); o.Selected || o.Role != "" {
+		t.Errorf("hand-made Vlan10 overwritten: %+v", o)
+	}
+	if o := find(merged, snmpx.KindIf, "Vlan20"); !o.Selected || o.Role != "core" || o.State != store.StateNew {
+		t.Errorf("new Vlan20 = %+v", o)
 	}
 }

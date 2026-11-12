@@ -23,6 +23,17 @@ var migrations = []string{
 	`ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT '';
 	 ALTER TABLE devices ADD COLUMN sw_version TEXT NOT NULL DEFAULT '';
 	 ALTER TABLE devices ADD COLUMN serial TEXT NOT NULL DEFAULT '';`,
+	// 4: port roles and rules that tick ports and set roles on discovery.
+	`ALTER TABLE objects ADD COLUMN role TEXT NOT NULL DEFAULT '';
+	 CREATE TABLE IF NOT EXISTS port_rules (
+	   id INTEGER PRIMARY KEY,
+	   pos INTEGER NOT NULL DEFAULT 0,
+	   field TEXT NOT NULL DEFAULT 'any',
+	   pattern TEXT NOT NULL,
+	   grp TEXT NOT NULL DEFAULT '',
+	   action TEXT NOT NULL DEFAULT '',
+	   role TEXT NOT NULL DEFAULT ''
+	 );`,
 }
 
 // backupsKept is how many automatic database backups stay on disk.

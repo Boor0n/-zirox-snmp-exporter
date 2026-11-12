@@ -134,6 +134,7 @@ const (
 	SettingAutoRefreshHours = "auto_refresh_hours"
 	SettingAutoRefreshFrom  = "auto_refresh_from"
 	SettingAutoRefreshTo    = "auto_refresh_to"
+	SettingFastInterval     = "fast_interval_sec"
 )
 
 // Roles of users and API tokens.
@@ -256,6 +257,9 @@ type Object struct {
 	Factor     float64
 	Selected   bool
 	State      string
+	// Role is what the port is for (uplink, core, server, access or empty).
+	// It is exported as the "role" label; uplinks can be polled faster.
+	Role string
 }
 
 // Settings are the global defaults.
@@ -270,6 +274,9 @@ type Settings struct {
 	AutoRefreshHours int
 	AutoRefreshFrom  int
 	AutoRefreshTo    int
+	// FastIntervalSec polls ports with the role "uplink" this often, in a
+	// separate loop and scrape target (0 = with the rest of the device).
+	FastIntervalSec int
 }
 
 // InRefreshWindow reports whether t falls into the scheduled refresh hours.
@@ -388,10 +395,38 @@ func (s *Store) Settings() Settings {
 		AutoRefreshHours: max(s.intSetting(SettingAutoRefreshHours, 0), 0),
 		AutoRefreshFrom:  hour(s.intSetting(SettingAutoRefreshFrom, 1)),
 		AutoRefreshTo:    hour(s.intSetting(SettingAutoRefreshTo, 5)),
+		FastIntervalSec:  fastInterval(s.intSetting(SettingFastInterval, DefaultFastIntervalSec)),
 	}
 }
 
 func hour(h int) int { return min(max(h, 0), 23) }
+
+// DefaultFastIntervalSec is the default poll interval of uplink ports. Most
+// Cisco platforms refresh interface counters every few seconds, so a shorter
+// interval mostly shows jitter; 10 s still shows bursts a 60 s poll averages away.
+const DefaultFastIntervalSec = 10
+
+func fastInterval(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	return max(n, MinIntervalSec)
+}
+
+// SetObjectRoles sets the role of objects of one device.
+func (s *Store) SetObjectRoles(deviceID int64, roles map[int64]string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for id, r := range roles {
+		if _, err := tx.Exec(`UPDATE objects SET role=? WHERE id=? AND device_id=?`, NormRole(r), id, deviceID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
 
 // SaveSettings stores the global defaults.
 func (s *Store) SaveSettings(st Settings) error {
@@ -408,6 +443,7 @@ func (s *Store) SaveSettings(st Settings) error {
 		SettingAutoRefreshHours: strconv.Itoa(max(st.AutoRefreshHours, 0)),
 		SettingAutoRefreshFrom:  strconv.Itoa(hour(st.AutoRefreshFrom)),
 		SettingAutoRefreshTo:    strconv.Itoa(hour(st.AutoRefreshTo)),
+		SettingFastInterval:     strconv.Itoa(fastInterval(st.FastIntervalSec)),
 	} {
 		if err := s.SetSetting(k, v); err != nil {
 			return err
@@ -746,7 +782,7 @@ func (s *Store) SetDiscoveryError(id int64, msg string) error {
 
 // ---- objects ----
 
-const objCols = `id,device_id,kind,key,idx,name,descr,alias,if_type,speed_mbps,oper_status,factor,selected,state`
+const objCols = `id,device_id,kind,key,idx,name,descr,alias,if_type,speed_mbps,oper_status,factor,selected,state,role`
 
 // Objects returns all objects of a device ordered for display.
 func (s *Store) Objects(deviceID int64) ([]Object, error) {
@@ -758,7 +794,7 @@ func (s *Store) Objects(deviceID int64) ([]Object, error) {
 	var out []Object
 	for rows.Next() {
 		var o Object
-		if err := rows.Scan(&o.ID, &o.DeviceID, &o.Kind, &o.Key, &o.Idx, &o.Name, &o.Descr, &o.Alias, &o.IfType, &o.SpeedMbps, &o.OperStatus, &o.Factor, &o.Selected, &o.State); err != nil {
+		if err := rows.Scan(&o.ID, &o.DeviceID, &o.Kind, &o.Key, &o.Idx, &o.Name, &o.Descr, &o.Alias, &o.IfType, &o.SpeedMbps, &o.OperStatus, &o.Factor, &o.Selected, &o.State, &o.Role); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
@@ -781,13 +817,13 @@ func (s *Store) ApplyDiscovery(d Device, objs []Object) error {
 	if _, err := tx.Exec(`DELETE FROM objects WHERE device_id=?`, d.ID); err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare(`INSERT INTO objects(device_id,kind,key,idx,name,descr,alias,if_type,speed_mbps,oper_status,factor,selected,state) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+	stmt, err := tx.Prepare(`INSERT INTO objects(device_id,kind,key,idx,name,descr,alias,if_type,speed_mbps,oper_status,factor,selected,state,role) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 	for _, o := range objs {
-		if _, err := stmt.Exec(d.ID, o.Kind, o.Key, o.Idx, o.Name, o.Descr, o.Alias, o.IfType, o.SpeedMbps, o.OperStatus, o.Factor, o.Selected, o.State); err != nil {
+		if _, err := stmt.Exec(d.ID, o.Kind, o.Key, o.Idx, o.Name, o.Descr, o.Alias, o.IfType, o.SpeedMbps, o.OperStatus, o.Factor, o.Selected, o.State, o.Role); err != nil {
 			return fmt.Errorf("insert %s/%s: %w", o.Kind, o.Key, err)
 		}
 	}
@@ -864,7 +900,7 @@ type ObjectHit struct {
 // ifAlias (case-insensitive substring).
 func (s *Store) SearchObjects(q string, limit int) ([]ObjectHit, error) {
 	like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(strings.ToLower(q)) + "%"
-	rows, err := s.db.Query(`SELECT o.id,o.device_id,o.kind,o.key,o.idx,o.name,o.descr,o.alias,o.if_type,o.speed_mbps,o.oper_status,o.factor,o.selected,o.state,d.name
+	rows, err := s.db.Query(`SELECT o.id,o.device_id,o.kind,o.key,o.idx,o.name,o.descr,o.alias,o.if_type,o.speed_mbps,o.oper_status,o.factor,o.selected,o.state,o.role,d.name
 		FROM objects o JOIN devices d ON d.id=o.device_id
 		WHERE lower(o.name) LIKE ? ESCAPE '\' OR lower(o.alias) LIKE ? ESCAPE '\' OR lower(o.descr) LIKE ? ESCAPE '\'
 		ORDER BY d.name, o.kind, o.name LIMIT ?`, like, like, like, limit)
@@ -876,7 +912,7 @@ func (s *Store) SearchObjects(q string, limit int) ([]ObjectHit, error) {
 	for rows.Next() {
 		var h ObjectHit
 		o := &h.Object
-		if err := rows.Scan(&o.ID, &o.DeviceID, &o.Kind, &o.Key, &o.Idx, &o.Name, &o.Descr, &o.Alias, &o.IfType, &o.SpeedMbps, &o.OperStatus, &o.Factor, &o.Selected, &o.State, &h.DeviceName); err != nil {
+		if err := rows.Scan(&o.ID, &o.DeviceID, &o.Kind, &o.Key, &o.Idx, &o.Name, &o.Descr, &o.Alias, &o.IfType, &o.SpeedMbps, &o.OperStatus, &o.Factor, &o.Selected, &o.State, &o.Role, &h.DeviceName); err != nil {
 			return nil, err
 		}
 		out = append(out, h)

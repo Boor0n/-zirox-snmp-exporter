@@ -205,7 +205,7 @@ func TestEndToEnd(t *testing.T) {
 
 	_, metrics := e.get("/probe?target=1")
 	for _, want := range []string{
-		`ifHCInOctets{ifAlias="to Ethernet1/5",ifDescr="Ethernet1/5",ifIndex="5",ifName="Ethernet1/5"} 5000`,
+		`ifHCInOctets{ifAlias="to Ethernet1/5",ifDescr="Ethernet1/5",ifIndex="5",ifName="Ethernet1/5",role=""} 5000`,
 		`zirox_cpu_utilization_percent{index="1",name="Supervisor CPU",window="5m"} 10`,
 		`zirox_poll_success 1`,
 	} {
@@ -677,4 +677,98 @@ func (e *env) postFollow(path string, form url.Values) (string, string) {
 	defer r.Body.Close()
 	b, _ := io.ReadAll(r.Body)
 	return r.Request.URL.Path, string(b)
+}
+
+func TestPortRolesRulesAndFastPolling(t *testing.T) {
+	e := setup(t)
+	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	e.post("/devices/new", url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
+		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}})
+	e.waitDiscovery(1)
+
+	// Uplinks every 5 s; the device itself stays at the global 60 s.
+	st := e.st.Settings()
+	if st.FastIntervalSec != 10 {
+		t.Errorf("default uplink interval = %d, want 10", st.FastIntervalSec)
+	}
+	e.post("/settings", url.Values{"interval_sec": {"60"}, "timeout_sec": {"5"}, "retries": {"1"}, "auto_select_up": {"on"}, "fast_interval_sec": {"5"}})
+	if got := e.st.Settings().FastIntervalSec; got != 5 {
+		t.Fatalf("uplink interval not saved: %d", got)
+	}
+
+	// Mark Ethernet1/1 as uplink on the device page.
+	objs, _ := e.st.Objects(1)
+	form := url.Values{}
+	var eth1 int64
+	for _, o := range objs {
+		if o.Selected {
+			form.Add("obj", fmt.Sprint(o.ID))
+		}
+		if o.Key == "Ethernet1/1" {
+			eth1 = o.ID
+		}
+	}
+	form.Set(fmt.Sprintf("role_%d", eth1), "uplink")
+	start := time.Now()
+	e.post("/devices/1/selection", form)
+	if _, card := e.get("/devices/1"); !strings.Contains(card, `name="role_`) || !strings.Contains(card, `<option selected>uplink</option>`) {
+		t.Error("device page lacks the role selector")
+	}
+	e.waitPoll(1, start)
+	deadline := time.Now().Add(5 * time.Second)
+	for e.en.FastSnapshot(1) == nil && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if fs := e.en.FastSnapshot(1); fs == nil || !fs.OK || fs.Interval != 5*time.Second {
+		t.Fatalf("fast snapshot = %+v", fs)
+	}
+
+	_, fast := e.get("/probe?target=1&poll=fast")
+	if !strings.Contains(fast, `ifHCInOctets{ifAlias="to Ethernet1/1",ifDescr="Ethernet1/1",ifIndex="1",ifName="Ethernet1/1",role="uplink"}`) ||
+		!strings.Contains(fast, "zirox_fast_poll_success 1") || strings.Contains(fast, `ifName="Ethernet1/3"`) {
+		t.Errorf("fast probe:\n%s", fast)
+	}
+	_, normal := e.get("/probe?target=1")
+	if strings.Contains(normal, `ifHCInOctets{ifAlias="to Ethernet1/1"`) || !strings.Contains(normal, `ifName="Ethernet1/3"`) {
+		t.Errorf("normal probe must leave the uplink to the fast target:\n%s", normal)
+	}
+	_, all := e.get("/metrics/all")
+	if !strings.Contains(all, `ifName="Ethernet1/1",role="uplink"`) {
+		t.Error("/metrics/all lacks the fast uplink")
+	}
+	_, body := e.get("/sd")
+	var sd []struct {
+		Labels map[string]string `json:"labels"`
+	}
+	_ = json.Unmarshal([]byte(body), &sd)
+	if len(sd) != 2 || sd[1].Labels["__param_poll"] != "fast" || sd[1].Labels["__scrape_interval__"] != "5s" || sd[1].Labels["poll"] != "fast" {
+		t.Errorf("sd = %s", body)
+	}
+
+	// A rule ticks VLANs as core; applying it changes the one existing VLAN.
+	if _, page := e.post("/rules", url.Values{"field": {"name"}, "pattern": {"^Vlan"}, "action": {"poll"}, "role": {"core"}}); !strings.Contains(page, "Rule saved") {
+		t.Fatalf("rule not saved: %s", flash(page))
+	}
+	if _, page := e.post("/rules", url.Values{"field": {"name"}, "pattern": {"("}, "action": {"poll"}}); !strings.Contains(page, "pattern") {
+		t.Errorf("bad pattern accepted: %s", flash(page))
+	}
+	if _, page := e.get("/rules"); !strings.Contains(page, "<b>1</b> ports on 1 devices") || !strings.Contains(page, "sw1 Vlan10") {
+		t.Error("rule preview missing")
+	}
+	if _, page := e.post("/rules/apply", nil); !strings.Contains(page, "Changed 1 ports on 1 devices") {
+		t.Errorf("apply: %s", flash(page))
+	}
+	objs, _ = e.st.Objects(1)
+	for _, o := range objs {
+		if o.Key == "Vlan10" && (!o.Selected || o.Role != "core") {
+			t.Errorf("Vlan10 = %+v", o)
+		}
+	}
+	_, page := e.get("/audit")
+	for _, want := range []string{"port roles changed", "port rule added", "port rules applied"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("change log lacks %q", want)
+		}
+	}
 }

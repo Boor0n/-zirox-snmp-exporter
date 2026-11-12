@@ -259,7 +259,7 @@ func PollDevice(s Session, objs []store.Object) (PollResult, error) {
 		}
 		res.Samples = append(res.Samples, Sample{
 			Name: IfInfoMetric, Help: "Live port names and description (ifAlias); value is always 1.",
-			Keys: []string{"ifIndex", "ifName", "ifDescr", "ifAlias"}, Values: []string{o.Idx, o.Name, o.Descr, alias},
+			Keys: []string{"ifIndex", "ifName", "ifDescr", "ifAlias", "role"}, Values: []string{o.Idx, o.Name, o.Descr, alias, o.Role},
 			Value: 1, Obj: o.ID,
 		})
 	}

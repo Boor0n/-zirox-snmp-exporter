@@ -28,6 +28,14 @@ An SNMP exporter for Prometheus with a web UI. You add devices in the browser. W
 - **Device list:** a 24-hour availability strip per device, bulk Check access / Refresh / Enable / Disable / Delete, and **Change…** to set the group, poll profile or credentials of all selected devices at once.
 - **Theme:** auto (follows the system), light or dark; **Compact tables** fits more rows on screen. Both are remembered in the browser.
 
+### Port roles, rules and fast uplinks
+
+Each port can have a **role**: `uplink`, `core`, `server`, `access` or any short word. Set it in the Role column of the device page (or for all visible ports at once), or let **Port rules** do it: a rule matches a regular expression on the port name or description, for all devices or one group, and ticks or unticks the port and sets its role. Rules apply to ports a discovery finds for the first time, top to bottom, first match wins; hand-made ticks and roles stay. **Apply to existing ports** runs them over every known port once. The rules page shows how many ports each rule matches today, with examples.
+
+The role is exported as the `role` label, so Grafana can show `role="uplink"` ports of all sites and alerts can treat an uplink differently from a printer port.
+
+**Uplinks are polled faster.** Ports with the role `uplink` are polled every 10 s (Settings → Uplink interval, minimum 5 s, 0 = off) in their own small request, and HTTP service discovery publishes them as a second target with `poll="fast"` and that scrape interval. The rest of the device keeps its own interval. 10 s is the recommended value: Cisco platforms refresh interface counters every few seconds, so 5 s mostly adds noise, while 10 s already shows bursts that a 60 s poll averages away.
+
 ### Poll interval
 
 The interval is set in seconds at three levels; the most specific wins:
@@ -244,7 +252,7 @@ Through HTTP service discovery Prometheus gets the list of devices and the inter
 
 ### Metrics
 
-Ports (same names as the standard snmp_exporter, so existing Grafana dashboards work): `ifHCInOctets`, `ifHCOutOctets`, `ifHCInUcastPkts`, `ifHCOutUcastPkts`, `ifInErrors`, `ifOutErrors`, `ifInDiscards`, `ifOutDiscards`, `ifOperStatus`, `ifAdminStatus`, `ifHighSpeed` with the labels `ifIndex`, `ifName`, `ifDescr`, `ifAlias`. For SNMPv1, `ifInOctets`/`ifOutOctets`/`ifSpeed` replace the 64-bit counters.
+Ports (same names as the standard snmp_exporter, so existing Grafana dashboards work): `ifHCInOctets`, `ifHCOutOctets`, `ifHCInUcastPkts`, `ifHCOutUcastPkts`, `ifInErrors`, `ifOutErrors`, `ifInDiscards`, `ifOutDiscards`, `ifOperStatus`, `ifAdminStatus`, `ifHighSpeed` with the labels `ifIndex`, `ifName`, `ifDescr`, `ifAlias` and `role` (empty unless set; Prometheus ignores empty labels, so series of ports without a role are unchanged). For SNMPv1, `ifInOctets`/`ifOutOctets`/`ifSpeed` replace the 64-bit counters.
 
 Device health: `zirox_cpu_utilization_percent{window}`, `zirox_memory_used_bytes`, `zirox_memory_free_bytes`, `zirox_memory_utilization_percent`, `zirox_memory_total_bytes`, `zirox_memory_available_bytes`, `zirox_temperature_celsius`, `zirox_sensor_value{unit}`, `zirox_sensor_status`, `zirox_envmon_{temperature,fan,psu}_state`, `zirox_storage_{size,used}_bytes`.
 
@@ -252,9 +260,9 @@ Firewalls (ASA): `zirox_firewall_connections{type="current"|"max"}`, `zirox_vpn_
 
 BGP peers (BGP4-MIB, IPv4): `zirox_bgp_peer_state` (6 = established), `zirox_bgp_peer_admin_status`, `zirox_bgp_peer_established_seconds`, `zirox_bgp_peer_updates_received_total` with the labels `peer`, `remote_as`.
 
-Port descriptions: `zirox_if_info{ifIndex, ifName, ifDescr, ifAlias}` = 1, with the live `ifAlias` read at every poll. Join it to traffic for the current description: `rate(ifHCInOctets[5m]) * on(device, ifIndex) group_left(ifAlias) zirox_if_info`.
+Port descriptions: `zirox_if_info{ifIndex, ifName, ifDescr, ifAlias, role}` = 1, with the live `ifAlias` read at every poll. Join it to traffic for the current description: `rate(ifHCInOctets[5m]) * on(device, ifIndex) group_left(ifAlias) zirox_if_info`.
 
-Internal: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_poll_partial`, `zirox_poll_requests_failed`, `zirox_ports_index_shifted`, `zirox_device_uptime_seconds`, `zirox_device_last_restart_timestamp_seconds`, `zirox_device_info` (labels `sysName`, `sysDescr`, `sysObjectID`, `model`, `version`, `serial`).
+Internal: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_poll_partial`, `zirox_poll_requests_failed`, `zirox_ports_index_shifted`, `zirox_device_uptime_seconds`, `zirox_device_last_restart_timestamp_seconds`, `zirox_fast_poll_success`, `zirox_fast_poll_duration_seconds`, `zirox_fast_poll_interval_seconds` (uplink target), `zirox_device_info` (labels `sysName`, `sysDescr`, `sysObjectID`, `model`, `version`, `serial`).
 
 Example queries:
 
