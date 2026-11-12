@@ -153,3 +153,30 @@ func TestColumnOf(t *testing.T) {
 		}
 	}
 }
+
+// A custom OID that is sysUpTime itself is exported once, and the poll
+// still learns the uptime from it.
+func TestCustomSysUpTime(t *testing.T) {
+	a := snmptest.Switch(2)
+	snmpx.SetCustom([]store.CustomOID{{ID: 1, Name: "test_uptime_ticks", OID: "1.3.6.1.2.1.1.3.0", Mode: store.CustomScalar, Scale: 1, AutoSelect: true}})
+	defer snmpx.SetCustom(nil)
+	_, found := discover(t, a)
+	objs := snmpx.Merge(nil, found, false)
+	for i := range objs {
+		objs[i].Selected = objs[i].Kind == "custom_1"
+	}
+	s, _ := a.Dial()
+	r, err := snmpx.PollDevice(s, objs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, sm := range r.Samples {
+		if sm.Name == "test_uptime_ticks" {
+			n++
+		}
+	}
+	if n != 1 || !r.HasUptime {
+		t.Errorf("custom sysUpTime samples = %d, uptime seen = %v", n, r.HasUptime)
+	}
+}

@@ -78,7 +78,12 @@ type APIPoll struct {
 	At         time.Time `json:"at"`
 	DurationMS int64     `json:"duration_ms"`
 	Error      string    `json:"error,omitempty"`
+	Problem    string    `json:"problem,omitempty"`
+	Hint       string    `json:"hint,omitempty"`
 	Samples    int       `json:"samples"`
+	Partial    bool      `json:"partial,omitempty"`
+	UptimeSec  int64     `json:"uptime_seconds,omitempty"`
+	Shifted    []string  `json:"shifted_ports,omitempty"`
 }
 
 // APIDevice is a device as the API shows it.
@@ -135,7 +140,8 @@ func apiDevice(row DeviceRow) APIDevice {
 		d.LastDiscovery = &t
 	}
 	if sn := row.Snap; sn != nil {
-		d.Poll = &APIPoll{OK: sn.OK, At: sn.At, DurationMS: sn.Duration.Milliseconds(), Error: sn.Err, Samples: len(sn.Samples)}
+		d.Poll = &APIPoll{OK: sn.OK, At: sn.At, DurationMS: sn.Duration.Milliseconds(), Error: sn.Err, Problem: sn.Problem, Hint: sn.Hint,
+			Samples: len(sn.Samples), Partial: sn.Partial, UptimeSec: int64(sn.Uptime.Seconds()), Shifted: sn.Shifted}
 	}
 	return d
 }

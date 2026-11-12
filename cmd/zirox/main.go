@@ -74,6 +74,14 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer st.Close()
+	if st.NewerSchema > 0 {
+		log.Warn("the database was written by a newer Zirox; running anyway, newer features stay unused", "db_schema", st.NewerSchema, "this_build", store.SchemaVersion())
+	}
+	if path, err := st.NoteVersion(version); err != nil {
+		log.Warn("database backup before upgrade failed", "err", err)
+	} else if path != "" {
+		log.Info("database backed up after a version change", "file", path)
+	}
 	if err := st.EnsureDefaultProfiles(); err != nil {
 		return err
 	}

@@ -74,3 +74,40 @@ tests:
             exp_annotations:
               summary: "BGP peer 10.0.0.2 (AS 65002) on sw1 is down"
               description: "State 3 (1=idle, 2=connect, 3=active, 4=opensent, 5=openconfirm, 6=established)."
+
+  - interval: 1m
+    input_series:
+      - series: 'zirox_device_uptime_seconds{device="sw2"}'
+        values: '86400 60 120 180'
+      - series: 'zirox_poll_partial{device="sw2"}'
+        values: '0 1x20'
+      - series: 'zirox_ports_index_shifted{device="sw2"}'
+        values: '0 2x40'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: ZiroxDeviceRestarted
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ZiroxDeviceRestarted
+        exp_alerts:
+          - exp_labels: {severity: info, device: sw2}
+            exp_annotations:
+              summary: "sw2 restarted 2m 0s ago"
+              description: "Zirox refreshed the device automatically to pick up renumbered ports."
+      - eval_time: 15m
+        alertname: ZiroxPartialPolls
+        exp_alerts:
+          - exp_labels: {severity: warning, device: sw2}
+            exp_annotations:
+              summary: "SNMP packets to sw2 are being lost"
+              description: "Some values are missing from most polls: packet loss on the way or an overloaded SNMP agent."
+      - eval_time: 20m
+        alertname: ZiroxPortIndexShifted
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: ZiroxPortIndexShifted
+        exp_alerts:
+          - exp_labels: {severity: warning, device: sw2}
+            exp_annotations:
+              summary: "2 ports of sw2 changed ifIndex and are not exported"
+              description: "Run Refresh on the device in Zirox and check the discovery error."

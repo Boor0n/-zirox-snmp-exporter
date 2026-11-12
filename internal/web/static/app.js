@@ -177,3 +177,14 @@
     if (!submitting && isDirty()) { e.preventDefault(); e.returnValue = ''; }
   });
 })();
+
+// Warn while typing a community that Cisco would split at '@'.
+(function () {
+  document.querySelectorAll('input[data-community]').forEach((inp) => {
+    const warn = inp.closest('label').parentElement.querySelector('[data-community-warn]');
+    if (!warn) return;
+    const check = () => { warn.hidden = !inp.value.includes('@'); };
+    inp.addEventListener('input', check);
+    check();
+  });
+})();

@@ -129,3 +129,71 @@ func TestRefreshWindow(t *testing.T) {
 		}
 	}
 }
+
+func TestRestartAndShiftTriggerRefresh(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "z.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	key, _ := secret.LoadKey("", filepath.Join(dir, "k"))
+	box, _ := secret.New(key)
+	a := snmptest.Switch(2)
+	now := time.Date(2026, 11, 12, 3, 0, 0, 0, time.Local)
+	e := New(st, box, Options{
+		Dial: func(snmpx.Target) (snmpx.Session, error) { return a.Dial() },
+		Now:  func() time.Time { return now },
+	})
+	enc, _ := box.Encrypt("public")
+	c := store.Credential{Name: "c", Version: "2c", Community: enc}
+	_ = st.SaveCredential(&c)
+	d := store.Device{Name: "sw", Address: "10.0.0.1", Port: 161, CredentialID: c.ID, Enabled: true}
+	_ = st.SaveDevice(&d)
+	wait := func() {
+		for e.Discovering(d.ID) {
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	prev := &Snapshot{OK: true, HasUptime: true, Uptime: 30 * 24 * time.Hour}
+	snap := &Snapshot{OK: true, HasUptime: true, Uptime: 3 * time.Minute, At: now}
+	e.checkConsistency(d, prev, snap)
+	wait()
+	if want := now.Add(-3 * time.Minute); !snap.LastReboot.Equal(want) {
+		t.Errorf("last restart = %v, want %v", snap.LastReboot, want)
+	}
+	if log, _ := st.AuditLog("automatic refresh", 10); len(log) != 1 || log[0].Details != "device restarted" {
+		t.Fatalf("restart did not start a refresh: %+v", log)
+	}
+	if d2, _ := st.Device(d.ID); d2.LastDiscovery.IsZero() {
+		t.Error("refresh did not run")
+	}
+
+	// A shift right after is held back by the pause...
+	e.checkConsistency(d, snap, &Snapshot{OK: true, Shifted: []string{"Ethernet1/1"}, At: now})
+	wait()
+	if log, _ := st.AuditLog("automatic refresh", 10); len(log) != 1 {
+		t.Fatalf("refresh not rate limited: %d", len(log))
+	}
+	// ...and runs once the pause is over.
+	now = now.Add(autoFixPause)
+	e.checkConsistency(d, snap, &Snapshot{OK: true, Shifted: []string{"Ethernet1/1"}, At: now})
+	wait()
+	if log, _ := st.AuditLog("automatic refresh", 10); len(log) != 2 || log[0].Details != "port numbering changed: Ethernet1/1" {
+		t.Fatalf("shift did not start a refresh: %+v", log)
+	}
+
+	// A 32-bit sysUpTime wrap after 497 days is not a restart.
+	e.checkConsistency(d, &Snapshot{HasUptime: true, Uptime: uptimeWrap - time.Minute}, &Snapshot{HasUptime: true, Uptime: time.Minute, At: now})
+	log, _ := st.AuditLog("device restarted", 10)
+	n := 0
+	for _, l := range log {
+		if l.Action == "device restarted" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("wrap counted as restart: %d entries", n)
+	}
+}

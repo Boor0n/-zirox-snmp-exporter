@@ -106,3 +106,33 @@ groups:
         annotations:
           summary: "BGP peer {{ $labels.peer }} (AS {{ $labels.remote_as }}) on {{ $labels.device }} is down"
           description: "State {{ $value }} (1=idle, 2=connect, 3=active, 4=opensent, 5=openconfirm, 6=established)."
+
+  - name: zirox-data
+    rules:
+      - alert: ZiroxDeviceRestarted
+        # sysUpTime is the SNMP agent's uptime: a device reload or an agent restart.
+        expr: zirox_device_uptime_seconds < 900
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.device }} restarted {{ $value | humanizeDuration }} ago"
+          description: "Zirox refreshed the device automatically to pick up renumbered ports."
+
+      - alert: ZiroxPartialPolls
+        # More than half of the polls in 15 minutes lost some SNMP requests.
+        expr: avg_over_time(zirox_poll_partial[15m]) > 0.5
+        labels:
+          severity: warning
+        annotations:
+          summary: "SNMP packets to {{ $labels.device }} are being lost"
+          description: "Some values are missing from most polls: packet loss on the way or an overloaded SNMP agent."
+
+      - alert: ZiroxPortIndexShifted
+        # The automatic Refresh normally fixes this within minutes.
+        expr: zirox_ports_index_shifted > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} ports of {{ $labels.device }} changed ifIndex and are not exported"
+          description: "Run Refresh on the device in Zirox and check the discovery error."

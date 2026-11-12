@@ -186,6 +186,21 @@ func emitDevice(ch chan<- prometheus.Metric, d store.Device, snap *engine.Snapsh
 	constMetric(withExtra(descDuration, "zirox_poll_duration_seconds", "Duration of the last SNMP poll.", nil), prometheus.GaugeValue, snap.Duration.Seconds())
 	constMetric(withExtra(descInterval, "zirox_poll_interval_seconds", "Effective poll interval of the device.", nil), prometheus.GaugeValue, snap.Interval.Seconds())
 	constMetric(withExtra(descSamples, "zirox_poll_samples", "Number of values returned by the last poll.", nil), prometheus.GaugeValue, float64(len(snap.Samples)))
+	if snap.OK {
+		partial := 0.0
+		if snap.Partial {
+			partial = 1
+		}
+		constMetric(withExtra(nil, "zirox_poll_partial", "1 if some SNMP requests of the last poll got no answer (values of those objects are missing or repeated).", nil), prometheus.GaugeValue, partial)
+		constMetric(withExtra(nil, "zirox_poll_requests_failed", "SNMP GET requests of the last poll that got no answer.", nil), prometheus.GaugeValue, float64(snap.Failed))
+		constMetric(withExtra(nil, "zirox_ports_index_shifted", "Ports whose ifIndex points at another interface; their values are withheld until the automatic Refresh.", nil), prometheus.GaugeValue, float64(len(snap.Shifted)))
+		if snap.HasUptime {
+			constMetric(withExtra(nil, "zirox_device_uptime_seconds", "Device uptime from sysUpTime (SNMP agent uptime).", nil), prometheus.GaugeValue, snap.Uptime.Seconds())
+		}
+	}
+	if !snap.LastReboot.IsZero() {
+		constMetric(withExtra(nil, "zirox_device_last_restart_timestamp_seconds", "Unix time of the last device restart seen by Zirox.", nil), prometheus.GaugeValue, float64(snap.LastReboot.Unix()))
+	}
 	if !snap.LastOK.IsZero() {
 		constMetric(withExtra(descLastOK, "zirox_poll_last_success_timestamp_seconds", "Unix time of the last successful poll.", nil), prometheus.GaugeValue, float64(snap.LastOK.Unix()))
 	}

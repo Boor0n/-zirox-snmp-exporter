@@ -8,8 +8,17 @@ An SNMP exporter for Prometheus with a web UI. You add devices in the browser. W
 
 1. **Add / Refresh.** A full walk of `ifTable`/`ifXTable`, CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-SYSTEM-EXT-MIB (Nexus), ENTITY-SENSOR-MIB, CISCO-ENVMON-MIB, HOST-RESOURCES-MIB, UCD-SNMP-MIB, CISCO-FIREWALL-MIB and CISCO-REMOTE-ACCESS-MONITOR-MIB (ASA), and BGP4-MIB.
 2. **Select.** The device page lists every object with a checkbox. By default physical ports that are up and all health objects are ticked. Ports that are down and VLAN interfaces are not.
-3. **Poll.** Only ticked objects, in batches of up to 30 OIDs per GET. For a 48-port switch with 10 ticked ports that is 4 small requests per interval.
+3. **Poll.** Only ticked objects, in batches of up to 40 OIDs per GET (three ports per request). For a 48-port switch with 10 ticked ports that is 4 small requests per interval. Every poll also reads `sysUpTime` and the `ifName`/`ifAlias` of the ticked ports, so Zirox can check that the values still belong to the right port (see "Data you can trust" below).
 4. **Refresh.** A new full walk, on demand or on schedule (Settings → Scheduled refresh, e.g. weekly at night; off by default). New ports are highlighted and ticked right away if they are up (configurable). Missing ones are marked and no longer polled. Your ticks are kept: ports are matched by name (`ifName`), not by `ifIndex`.
+
+### Data you can trust
+
+- **Port renumbering.** After a reload or a module swap a device may give a port another `ifIndex`. Each poll compares the `ifName` at the polled index with the name found at discovery. If they differ, that port's values are withheld (no traffic is written under the wrong name) and Zirox runs a Refresh by itself, at most once per 15 minutes per device.
+- **Restarts.** When `sysUpTime` goes down, the device restarted: Zirox notes it in the change log, exports `zirox_device_last_restart_timestamp_seconds` and refreshes the device.
+- **Lost packets.** Requests are independent: if one of them gets no answer, only its objects are affected, the poll is marked partial (`zirox_poll_partial`) and their previous values are repeated once so graphs keep no hole.
+- **Port descriptions.** The `ifAlias` label on counters stays as discovered so a changed description does not split the graph; the live description is in `zirox_if_info`.
+- **Clear errors.** Failures say what happened and what to check: no answer (ACL, with the address Zirox sends from), access refused (`authorizationError`, community view, `@` in the community), unknown v3 user, wrong v3 password, no route (Docker network), and so on.
+- **Database upgrades.** The schema is versioned; before an upgrade changes it, and whenever a new Zirox version starts, a copy of the database is written to `data/backups/` (the newest 5 are kept).
 
 ### Poll interval
 
@@ -132,7 +141,8 @@ Optionally import `deploy/grafana-dashboard.json` into Grafana and add `deploy/a
 | Installer: "port 9116 is already in use" | Another exporter (often the standard snmp_exporter) uses it. Add `--port 9117`, or stop the other one. |
 | Installer: "cannot read releases" / download fails | No internet from the server. Use the proxy form of the command from step 2. |
 | Web UI does not open from your PC, but `curl http://127.0.0.1:9116/healthz` on the server answers `ok` | A host firewall blocks the port: `sudo firewall-cmd --add-port=9116/tcp --permanent && sudo firewall-cmd --reload` (or open it in `ufw`/iptables). |
-| Test connection: timeout | Check from the server itself: `snmpget -v2c -c <community> <device-ip> 1.3.6.1.2.1.1.5.0` (package `net-snmp-utils` or `snmp`). If it times out too, the problem is outside Zirox: UDP 161 blocked on the way, the device's SNMP ACL does not allow the server's IP, a wrong community, or SNMP not enabled on the device. |
+| Device shows "The device refused access (authorizationError)" | The community or v3 user is accepted but its SNMP view hides the OIDs. On Cisco a community with `@` is read as `community@context`: use one without `@`. |
+| Test connection: "No answer from the device" | Check from the server itself: `snmpget -v2c -c <community> <device-ip> 1.3.6.1.2.1.1.5.0` (package `net-snmp-utils` or `snmp`). If it times out too, the problem is outside Zirox: UDP 161 blocked on the way, the device's SNMP ACL does not allow the server's IP, a wrong community, or SNMP not enabled on the device. |
 | `snmpget` from the host works, Zirox gets "no route to host" or timeouts | Docker's bridge network is not allowed out. Reinstall with `--host-network`. |
 | Some ports or sensors are missing | The SNMP view on the device may hide them. Check with `snmpwalk -v2c -c <community> <device-ip> 1.3.6.1.2.1.31.1.1.1.1` (ifName), then click **Refresh** on the device. |
 | Prometheus target is DOWN | Prometheus cannot reach the server on the Zirox port, or `ZIROX_SCRAPE_TOKEN` is set and Prometheus does not send it. |
@@ -230,7 +240,9 @@ Firewalls (ASA): `zirox_firewall_connections{type="current"|"max"}`, `zirox_vpn_
 
 BGP peers (BGP4-MIB, IPv4): `zirox_bgp_peer_state` (6 = established), `zirox_bgp_peer_admin_status`, `zirox_bgp_peer_established_seconds`, `zirox_bgp_peer_updates_received_total` with the labels `peer`, `remote_as`.
 
-Internal: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_device_info`.
+Port descriptions: `zirox_if_info{ifIndex, ifName, ifDescr, ifAlias}` = 1, with the live `ifAlias` read at every poll. Join it to traffic for the current description: `rate(ifHCInOctets[5m]) * on(device, ifIndex) group_left(ifAlias) zirox_if_info`.
+
+Internal: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_poll_partial`, `zirox_poll_requests_failed`, `zirox_ports_index_shifted`, `zirox_device_uptime_seconds`, `zirox_device_last_restart_timestamp_seconds`, `zirox_device_info`.
 
 Example queries:
 
@@ -242,7 +254,7 @@ zirox_poll_success == 0                             # devices that do not answer
 
 ### Alerts
 
-`deploy/alerts.yml` has ready Prometheus rules: device not answering for 5 minutes, CPU > 90 %, memory > 90 %, temperature > 70 °C, PSU/fan/sensor problem (CISCO-ENVMON), disk > 90 % full, port down while admin up, port errors, port utilization > 90 %, BGP peer not established. Adjust the thresholds to your needs.
+`deploy/alerts.yml` has ready Prometheus rules: device not answering for 5 minutes, CPU > 90 %, memory > 90 %, temperature > 70 °C, PSU/fan/sensor problem (CISCO-ENVMON), disk > 90 % full, port down while admin up, port errors, port utilization > 90 %, BGP peer not established, device restarted, SNMP packets lost in most polls, ports renumbered and not fixed by the automatic Refresh. Adjust the thresholds to your needs.
 
 ```yaml
 rule_files:

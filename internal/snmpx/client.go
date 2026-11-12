@@ -11,8 +11,9 @@ import (
 	"github.com/Boor0n/zirox-snmp-exporter/internal/store"
 )
 
-// maxOidsPerGet caps the varbinds sent in one GET request.
-const maxOidsPerGet = 30
+// maxOidsPerGet caps the varbinds sent in one GET request. 40 fits three
+// ports (counters plus ifName/ifAlias checks) in one packet of about 1.3 KB.
+const maxOidsPerGet = 40
 
 // Session is the subset of SNMP operations the app needs. Tests use a fake.
 type Session interface {
@@ -151,8 +152,11 @@ func (s *session) Walk(root string) ([]gosnmp.SnmpPDU, error) {
 }
 
 // Get fetches oids in chunks. Missing instances are dropped from the result.
+// When nothing came back and the device answered with an error status
+// (such as authorizationError), that status is returned as *StatusError.
 func (s *session) Get(oids []string) ([]gosnmp.SnmpPDU, error) {
 	var out []gosnmp.SnmpPDU
+	status := gosnmp.NoError
 	for start := 0; start < len(oids); start += maxOidsPerGet {
 		chunk := oids[start:min(start+maxOidsPerGet, len(oids))]
 		pkt, err := s.g.Get(chunk)
@@ -160,6 +164,9 @@ func (s *session) Get(oids []string) ([]gosnmp.SnmpPDU, error) {
 			return out, err
 		}
 		if pkt.Error != gosnmp.NoError {
+			if pkt.Error != gosnmp.NoSuchName {
+				status = pkt.Error
+			}
 			// SNMPv1 fails the whole request when one OID is unknown;
 			// fall back to one OID per request for this chunk.
 			if s.g.Version != gosnmp.Version1 || len(chunk) == 1 {
@@ -177,6 +184,9 @@ func (s *session) Get(oids []string) ([]gosnmp.SnmpPDU, error) {
 			continue
 		}
 		out = append(out, valid(pkt.Variables)...)
+	}
+	if len(out) == 0 && status != gosnmp.NoError {
+		return nil, &StatusError{Status: status}
 	}
 	return out, nil
 }

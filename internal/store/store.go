@@ -291,7 +291,11 @@ type AuditEntry struct {
 
 // Store wraps the database.
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
+	// NewerSchema is set to the database's schema version when it was
+	// written by a newer Zirox (after a rollback); 0 otherwise.
+	NewerSchema int
 }
 
 // Open opens (and migrates) the database at path.
@@ -301,11 +305,20 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
+	var tables int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table'`).Scan(&tables); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	s := &Store{db: db}
+	s := &Store{db: db, path: path}
+	if err := s.migrate(tables == 0); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	if err := s.migrateAdmin(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate admin: %w", err)

@@ -412,7 +412,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(ifOperStatus{group=~\"$group\"} == 2 and on(device, ifIndex) ifAdminStatus == 1) or vector(0)",
+          "expr": "count((ifOperStatus{group=~\"$group\"} and on(device) zirox_poll_success == 1) == 2 and on(device, ifIndex) ifAdminStatus == 1) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -547,7 +547,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(ifHCInOctets{group=~\"$group\"}[5m])) * 8 / 1e6",
+          "expr": "sum((rate(ifHCInOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1)) * 8 / 1e6",
           "legendFormat": "",
           "refId": "A",
           "range": true,
@@ -895,7 +895,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (device) (zirox_cpu_utilization_percent{group=~\"$group\"})",
+          "expr": "max by (device) ((zirox_cpu_utilization_percent{group=~\"$group\"} and on(device) zirox_poll_success == 1))",
           "legendFormat": "",
           "refId": "B",
           "instant": true,
@@ -907,7 +907,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (device) (zirox_temperature_celsius{group=~\"$group\"})",
+          "expr": "max by (device) ((zirox_temperature_celsius{group=~\"$group\"} and on(device) zirox_poll_success == 1))",
           "legendFormat": "",
           "refId": "C",
           "instant": true,
@@ -919,7 +919,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count by (device) (ifOperStatus{group=~\"$group\"} == 1)",
+          "expr": "count by (device) ((ifOperStatus{group=~\"$group\"} and on(device) zirox_poll_success == 1) == 1)",
           "legendFormat": "",
           "refId": "D",
           "instant": true,
@@ -931,7 +931,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count by (device) (ifOperStatus{group=~\"$group\"})",
+          "expr": "count by (device) ((ifOperStatus{group=~\"$group\"} and on(device) zirox_poll_success == 1))",
           "legendFormat": "",
           "refId": "E",
           "instant": true,
@@ -943,7 +943,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (device) (rate(ifHCInOctets{group=~\"$group\"}[5m])) * 8 / 1e6",
+          "expr": "sum by (device) ((rate(ifHCInOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1)) * 8 / 1e6",
           "legendFormat": "",
           "refId": "F",
           "instant": true,
@@ -955,7 +955,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (device) (rate(ifHCOutOctets{group=~\"$group\"}[5m])) * 8 / 1e6",
+          "expr": "sum by (device) ((rate(ifHCOutOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1)) * 8 / 1e6",
           "legendFormat": "",
           "refId": "G",
           "instant": true,
@@ -1173,7 +1173,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "topk(10, (rate(ifHCInOctets{group=~\"$group\"}[5m]) > rate(ifHCOutOctets{group=~\"$group\"}[5m]) or rate(ifHCOutOctets{group=~\"$group\"}[5m])) * 8 / 1e6)",
+          "expr": "topk(10, ((rate(ifHCInOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1) > (rate(ifHCOutOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1) or (rate(ifHCOutOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1)) * 8 / 1e6)",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -1351,7 +1351,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "topk(10, 100 * (rate(ifHCInOctets{group=~\"$group\"}[5m]) > rate(ifHCOutOctets{group=~\"$group\"}[5m]) or rate(ifHCOutOctets{group=~\"$group\"}[5m])) * 8 / (ifHighSpeed{group=~\"$group\"} * 1e6 > 0))",
+          "expr": "topk(10, 100 * ((rate(ifHCInOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1) > (rate(ifHCOutOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1) or (rate(ifHCOutOctets{group=~\"$group\"}[5m]) and on(device) zirox_poll_success == 1)) * 8 / ((ifHighSpeed{group=~\"$group\"} and on(device) zirox_poll_success == 1) * 1e6 > 0))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -1447,7 +1447,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "ifOperStatus{group=~\"$group\"} == 2 and on(device, ifIndex) ifAdminStatus == 1",
+          "expr": "(ifOperStatus{group=~\"$group\"} and on(device) zirox_poll_success == 1) == 2 and on(device, ifIndex) ifAdminStatus == 1",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -1774,7 +1774,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(zirox_cpu_utilization_percent{device=\"$device\"})",
+          "expr": "max((zirox_cpu_utilization_percent{device=\"$device\"} and on(device) zirox_poll_success == 1))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -1847,7 +1847,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(zirox_memory_utilization_percent{device=\"$device\"} or 100 * zirox_memory_used_bytes{device=\"$device\"} / (zirox_memory_used_bytes{device=\"$device\"} + zirox_memory_free_bytes{device=\"$device\"}) or 100 * (1 - zirox_memory_available_bytes{device=\"$device\"} / zirox_memory_total_bytes{device=\"$device\"}))",
+          "expr": "max((zirox_memory_utilization_percent{device=\"$device\"} and on(device) zirox_poll_success == 1) or 100 * (zirox_memory_used_bytes{device=\"$device\"} and on(device) zirox_poll_success == 1) / ((zirox_memory_used_bytes{device=\"$device\"} and on(device) zirox_poll_success == 1) + (zirox_memory_free_bytes{device=\"$device\"} and on(device) zirox_poll_success == 1)) or 100 * (1 - zirox_memory_available_bytes{device=\"$device\"} / zirox_memory_total_bytes{device=\"$device\"}))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -1920,7 +1920,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max(zirox_temperature_celsius{device=\"$device\"})",
+          "expr": "max((zirox_temperature_celsius{device=\"$device\"} and on(device) zirox_poll_success == 1))",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -1985,7 +1985,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(ifOperStatus{device=\"$device\"} == 1) or vector(0)",
+          "expr": "count((ifOperStatus{device=\"$device\"} and on(device) zirox_poll_success == 1) == 1) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -2054,7 +2054,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "count(ifOperStatus{device=\"$device\"} == 2 and on(ifIndex) ifAdminStatus{device=\"$device\"} == 1) or vector(0)",
+          "expr": "count((ifOperStatus{device=\"$device\"} and on(device) zirox_poll_success == 1) == 2 and on(ifIndex) ifAdminStatus{device=\"$device\"} == 1) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -2120,7 +2120,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(ifHCInOctets{device=\"$device\"}[5m])) * 8 / 1e6",
+          "expr": "sum((rate(ifHCInOctets{device=\"$device\"}[5m]) and on(device) zirox_poll_success == 1)) * 8 / 1e6",
           "legendFormat": "",
           "refId": "A",
           "range": true,
@@ -2185,7 +2185,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(ifHCOutOctets{device=\"$device\"}[5m])) * 8 / 1e6",
+          "expr": "sum((rate(ifHCOutOctets{device=\"$device\"}[5m]) and on(device) zirox_poll_success == 1)) * 8 / 1e6",
           "legendFormat": "",
           "refId": "A",
           "range": true,
@@ -3083,7 +3083,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "ifOperStatus{device=\"$device\"} + 0",
+          "expr": "(ifOperStatus{device=\"$device\"} and on(device) zirox_poll_success == 1) + 0",
           "legendFormat": "",
           "refId": "A",
           "instant": true,
@@ -3095,7 +3095,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "ifHighSpeed{device=\"$device\"} + 0",
+          "expr": "(ifHighSpeed{device=\"$device\"} and on(device) zirox_poll_success == 1) + 0",
           "legendFormat": "",
           "refId": "B",
           "instant": true,
@@ -3107,7 +3107,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(ifHCInOctets{device=\"$device\"}[5m]) * 8 / 1e6",
+          "expr": "(rate(ifHCInOctets{device=\"$device\"}[5m]) and on(device) zirox_poll_success == 1) * 8 / 1e6",
           "legendFormat": "",
           "refId": "C",
           "instant": true,
@@ -3119,7 +3119,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "rate(ifHCOutOctets{device=\"$device\"}[5m]) * 8 / 1e6",
+          "expr": "(rate(ifHCOutOctets{device=\"$device\"}[5m]) and on(device) zirox_poll_success == 1) * 8 / 1e6",
           "legendFormat": "",
           "refId": "D",
           "instant": true,
@@ -3131,7 +3131,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "100 * (rate(ifHCInOctets{device=\"$device\"}[5m]) > rate(ifHCOutOctets{device=\"$device\"}[5m]) or rate(ifHCOutOctets{device=\"$device\"}[5m])) * 8 / (ifHighSpeed{device=\"$device\"} * 1e6 > 0)",
+          "expr": "100 * ((rate(ifHCInOctets{device=\"$device\"}[5m]) and on(device) zirox_poll_success == 1) > (rate(ifHCOutOctets{device=\"$device\"}[5m]) and on(device) zirox_poll_success == 1) or (rate(ifHCOutOctets{device=\"$device\"}[5m]) and on(device) zirox_poll_success == 1)) * 8 / ((ifHighSpeed{device=\"$device\"} and on(device) zirox_poll_success == 1) * 1e6 > 0)",
           "legendFormat": "",
           "refId": "E",
           "instant": true,

@@ -1,10 +1,15 @@
 package snmpx_test
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gosnmp/gosnmp"
 
 	"github.com/Boor0n/zirox-snmp-exporter/internal/snmpx"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/snmpx/snmptest"
@@ -116,9 +121,10 @@ func TestPollOnlySelected(t *testing.T) {
 	if walks != 0 {
 		t.Errorf("poll must not walk, did %d walks", walks)
 	}
-	// 3 ports x 11 metrics (v2c) + 2 CPU + 2 temp = 37 OIDs.
-	if oids != 37 || gets != 1 {
-		t.Errorf("gets=%d oids=%d, want 1 call (fake) with 37 OIDs", gets, oids)
+	// sysUpTime + 3 ports x (11 metrics (v2c) + ifName + ifAlias) + 2 CPU
+	// + 2 temp = 44 OIDs in two requests of at most 40.
+	if oids != 44 || gets != 2 {
+		t.Errorf("gets=%d oids=%d, want 2 calls with 44 OIDs", gets, oids)
 	}
 	got := map[string]float64{}
 	for _, sm := range samples {
@@ -257,5 +263,149 @@ func TestFirewallAndBGP(t *testing.T) {
 	}
 	if _, ok := got["zirox_vpn_sessions type=anyconnect"]; ok {
 		t.Error("a missing OID must not produce a sample")
+	}
+}
+
+func selectPorts(objs []store.Object, keys ...string) {
+	for i := range objs {
+		objs[i].ID = int64(i + 1)
+		objs[i].Selected = false
+		for _, k := range keys {
+			if objs[i].Key == k {
+				objs[i].Selected = true
+			}
+		}
+	}
+}
+
+func TestPollChecksUptimeAndIfName(t *testing.T) {
+	a := snmptest.Switch(8)
+	_, found := discover(t, a)
+	objs := snmpx.Merge(nil, found, false)
+	selectPorts(objs, "Ethernet1/3", "Ethernet1/5")
+	s, _ := a.Dial()
+
+	r, err := snmpx.PollDevice(s, objs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.HasUptime || r.Uptime != 24*time.Hour {
+		t.Errorf("uptime = %v (%v), want 24h", r.Uptime, r.HasUptime)
+	}
+	if len(r.Shifted) != 0 || r.Partial() {
+		t.Errorf("clean poll reported shifted=%v partial=%v", r.Shifted, r.Partial())
+	}
+	info := 0
+	for _, sm := range r.Samples {
+		if sm.Name == snmpx.IfInfoMetric {
+			info++
+		}
+	}
+	if info != 2 {
+		t.Errorf("want zirox_if_info for 2 ports, got %d", info)
+	}
+
+	// The description changes on the device: counters keep the discovered
+	// ifAlias label, zirox_if_info shows the new one.
+	a.Set("1.3.6.1.2.1.31.1.1.1.18.3", "UPLINK_CORE2")
+	r, _ = snmpx.PollDevice(s, objs)
+	for _, sm := range r.Samples {
+		if sm.Values[1] != "Ethernet1/3" {
+			continue
+		}
+		alias := sm.Values[3]
+		if sm.Name == snmpx.IfInfoMetric && alias != "UPLINK_CORE2" {
+			t.Errorf("if_info alias = %q", alias)
+		}
+		if sm.Name == "ifHCInOctets" && alias != "to Ethernet1/3" {
+			t.Errorf("counter alias label changed to %q", alias)
+		}
+	}
+
+	// After a reload the device renumbers: index 5 is now another port.
+	a.Set("1.3.6.1.2.1.31.1.1.1.1.5", "Ethernet1/7")
+	r, _ = snmpx.PollDevice(s, objs)
+	if len(r.Shifted) != 1 || r.Shifted[0] != "Ethernet1/5" {
+		t.Fatalf("shifted = %v, want [Ethernet1/5]", r.Shifted)
+	}
+	for _, sm := range r.Samples {
+		if sm.Values[1] == "Ethernet1/5" {
+			t.Errorf("value of a shifted port exported: %s", sm.Name)
+		}
+	}
+	// A port that vanished from its index is shifted too.
+	a.Delete("1.3.6.1.2.1.31.1.1.1.1.3")
+	r, _ = snmpx.PollDevice(s, objs)
+	if len(r.Shifted) != 2 {
+		t.Errorf("shifted = %v, want both ports", r.Shifted)
+	}
+}
+
+func TestPollPartial(t *testing.T) {
+	a := snmptest.Switch(12)
+	_, found := discover(t, a)
+	objs := snmpx.Merge(nil, found, false)
+	selectPorts(objs, "Ethernet1/1", "Ethernet1/3", "Ethernet1/5", "Ethernet1/7", "Ethernet1/9")
+	s, _ := a.Dial()
+	// Lose every request that carries Ethernet1/9's counters.
+	a.FailGet = func(oids []string) bool {
+		for _, o := range oids {
+			if o == "1.3.6.1.2.1.31.1.1.1.6.9" {
+				return true
+			}
+		}
+		return false
+	}
+	r, err := snmpx.PollDevice(s, objs)
+	if err != nil {
+		t.Fatalf("partial poll must not fail: %v", err)
+	}
+	if !r.Partial() || r.Failed != 1 || r.Requests != 2 {
+		t.Fatalf("partial=%v failed=%d requests=%d", r.Partial(), r.Failed, r.Requests)
+	}
+	got := map[string]bool{}
+	for _, sm := range r.Samples {
+		if sm.Name == "ifHCInOctets" {
+			got[sm.Values[1]] = true
+		}
+	}
+	// Objects are packed in discovery order: three ports share a request.
+	if len(got) < 2 || got["Ethernet1/9"] {
+		t.Errorf("ports with values: %v", got)
+	}
+	if len(r.LostObjects) == 0 {
+		t.Error("lost objects not reported")
+	}
+	// Everything lost: the poll fails.
+	a.FailGet = func([]string) bool { return true }
+	if _, err := snmpx.PollDevice(s, objs); err == nil {
+		t.Error("poll with every request lost must fail")
+	}
+}
+
+func TestExplain(t *testing.T) {
+	cases := []struct {
+		err     error
+		problem string
+	}{
+		{errors.New("request timeout (after 1 retries)"), snmpx.ProblemTimeout},
+		{&snmpx.StatusError{Status: gosnmp.AuthorizationError}, snmpx.ProblemAuthz},
+		{fmt.Errorf("walk ifDescr: %w", &snmpx.StatusError{Status: gosnmp.AuthorizationError}), snmpx.ProblemAuthz},
+		{gosnmp.ErrUnknownUsername, snmpx.ProblemV3User},
+		{gosnmp.ErrWrongDigest, snmpx.ProblemV3Auth},
+		{errors.New("read udp 10.0.0.1:5000->10.0.0.2:161: connect: no route to host"), snmpx.ProblemNoRoute},
+		{errors.New("read: connection refused"), snmpx.ProblemRefused},
+		{snmpx.ErrNoData, snmpx.ProblemNoData},
+	}
+	for _, c := range cases {
+		if got := snmpx.Explain(c.err, "2c", "10.210.136.17"); got.Problem != c.problem {
+			t.Errorf("%v: problem %s, want %s", c.err, got.Problem, c.problem)
+		}
+	}
+	if ex := snmpx.Explain(errors.New("request timeout"), "2c", "10.210.136.17"); !strings.Contains(ex.Hint, "10.210.136.17") {
+		t.Errorf("timeout hint must name the source address: %s", ex.Hint)
+	}
+	if snmpx.CommunityWarning("ro@es0") == "" || snmpx.CommunityWarning("public") != "" {
+		t.Error("community warning")
 	}
 }
