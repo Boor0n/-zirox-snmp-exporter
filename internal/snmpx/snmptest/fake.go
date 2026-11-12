@@ -31,7 +31,7 @@ type TimeTicks uint32
 // New returns an empty agent speaking SNMP v2c.
 func New() *Agent { return &Agent{vals: map[string]gosnmp.SnmpPDU{}, Ver: "2c"} }
 
-// Set stores a value. v may be string, int, uint, uint64.
+// Set stores a value. v may be string, []byte, int, uint, uint64.
 func (a *Agent) Set(oid string, v any) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -39,6 +39,8 @@ func (a *Agent) Set(oid string, v any) {
 	switch x := v.(type) {
 	case string:
 		p.Type, p.Value = gosnmp.OctetString, []byte(x)
+	case []byte:
+		p.Type, p.Value = gosnmp.OctetString, x
 	case int:
 		p.Type, p.Value = gosnmp.Integer, x
 	case uint:

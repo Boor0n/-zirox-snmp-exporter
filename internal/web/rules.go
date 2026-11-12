@@ -67,7 +67,7 @@ func (s *Server) rulePreview(rs store.Rules) ([]ruleRow, int, error) {
 }
 
 func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
-	rs, err := s.st.PortRules()
+	rs, err := s.st.EffectiveRules()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -108,7 +108,7 @@ func ruleText(r store.PortRule) string {
 	if r.Role != "" {
 		what += ", role " + r.Role
 	}
-	where := map[string]string{store.FieldName: "name", store.FieldAlias: "description"}[r.Field]
+	where := map[string]string{store.FieldName: "name", store.FieldAlias: "description", store.FieldNeighbor: "neighbour"}[r.Field]
 	if where == "" {
 		where = "name or description"
 	}
@@ -169,7 +169,7 @@ func (s *Server) ruleMove(w http.ResponseWriter, r *http.Request) {
 // rulesApply runs the rules over every known port, overriding ticks and
 // roles set by hand on the ports they match.
 func (s *Server) rulesApply(w http.ResponseWriter, r *http.Request) {
-	rs, err := s.st.PortRules()
+	rs, err := s.st.EffectiveRules()
 	if err != nil {
 		redirectErr(w, r, "/rules", err)
 		return

@@ -506,8 +506,26 @@ func (s *Server) deviceCard(w http.ResponseWriter, r *http.Request) {
 		"Device": d, "Groups": groups, "Snap": snap, "Eff": s.en.Resolve(d), "Discovering": s.en.Discovering(d.ID),
 		"New": nNew, "Missing": nMissing, "Credential": cred, "SampleCount": sampleCount(snap),
 		"Wizard": r.URL.Query().Get("wizard") == "1", "Rates": s.en.DeviceRates(d.ID), "Tabs": tabs,
-		"History": s.en.History(d.ID),
+		"History": s.en.History(d.ID), "Known": s.knownDevices(d.ID),
 	})
+}
+
+// knownDevices maps the HostKey of every other device's name, sysName and
+// address to its ID, to link CDP/LLDP neighbours to their pages.
+func (s *Server) knownDevices(self int64) map[string]int64 {
+	devs, _ := s.st.Devices()
+	m := map[string]int64{}
+	for _, d := range devs {
+		if d.ID == self {
+			continue
+		}
+		for _, n := range []string{d.Name, d.SysName, d.Address} {
+			if k := store.HostKey(n); k != "" {
+				m[k] = d.ID
+			}
+		}
+	}
+	return m
 }
 
 func sampleCount(s *engine.Snapshot) int {

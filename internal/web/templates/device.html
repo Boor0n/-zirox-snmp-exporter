@@ -112,7 +112,8 @@
 {{define "objrow"}}{{$ := index . 0}}{{$g := index . 1}}{{$o := index . 2}}
 <tr class="obj {{$o.State}}" data-up="{{if eq $o.OperStatus 1}}1{{end}}" data-phys="{{if or (ne $o.Kind "if") (physical $o.IfType)}}1{{end}}" data-obj="{{$o.ID}}">
   <td><input type="checkbox" name="obj" value="{{$o.ID}}" aria-label="Poll {{$o.Name}}" {{if $o.Selected}}checked{{end}} {{if not $.CanEdit}}disabled{{end}}></td>
-  <td><b class="mono">{{$o.Name}}</b>{{if eq $o.Kind "if"}} <span class="muted small">#{{$o.Idx}}</span>{{end}}</td>
+  <td><b class="mono">{{$o.Name}}</b>{{if eq $o.Kind "if"}} <span class="muted small">#{{$o.Idx}}</span>{{end}}{{if $o.Neighbor}}{{$id := index $.Known (hostkey $o.Neighbor)}}
+    <div class="small muted" title="{{$o.NeighborProto | upper}} neighbour">↔ {{if $id}}<a href="/devices/{{$id}}">{{$o.Neighbor}}</a>{{else}}{{$o.Neighbor}}{{end}}{{with $o.NeighborPort}} {{.}}{{end}}</div>{{end}}</td>
   {{if $g.HasDescr}}<td>{{$o.Alias}}{{if and $o.Alias (ne $o.Descr $o.Name)}} · {{end}}{{if ne $o.Descr $o.Name}}<span class="muted">{{$o.Descr}}</span>{{end}}</td>{{end}}
   {{if eq $o.Kind "if"}}<td>{{iftype $o.IfType}}</td><td>{{speed $o.SpeedMbps}}</td><td><span class="oper o{{$o.OperStatus}}"><span class="dot" aria-hidden="true"></span>{{oper $o.OperStatus}}</span></td>
   {{$r := rate $.Rates $o.ID}}

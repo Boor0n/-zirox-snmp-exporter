@@ -243,6 +243,8 @@ var funcs = template.FuncMap{
 		return "type " + strconv.Itoa(t)
 	},
 	"physical": func(t int) bool { return physicalTypes[t] },
+	"hostkey":  store.HostKey,
+	"upper":    strings.ToUpper,
 	"oper": func(s int) string {
 		switch s {
 		case 1:

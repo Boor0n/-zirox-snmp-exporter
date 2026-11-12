@@ -103,6 +103,7 @@ func Discover(s Session) (SystemInfo, []store.Object, error) {
 	if err != nil {
 		return info, nil, err
 	}
+	discoverNeighbors(s, ifs)
 	objs = append(objs, ifs...)
 	// Health objects are best effort: a device that lacks a MIB returns nothing.
 	health := discoverHealth(s)
@@ -333,6 +334,14 @@ func MergeWithRules(old, found []store.Object, autoSelect bool, rules store.Rule
 		if p, ok := prev[k]; ok {
 			o.Selected = p.Selected
 			o.Role = p.Role
+			// A known port that just got a neighbour in Zirox (also: the
+			// first discovery after an upgrade to v1.0) becomes an uplink
+			// once; a role cleared by hand afterwards stays cleared.
+			if o.Kind == KindIf && o.Role == "" && o.Neighbor != "" && !strings.EqualFold(o.Neighbor, p.Neighbor) {
+				if b := rules.Builtin(); b != nil && b.Matches(o, group) {
+					o.Selected, o.Role = true, b.Role
+				}
+			}
 			o.State = store.StateActive
 			if p.State == store.StateNew {
 				o.State = store.StateNew

@@ -135,6 +135,7 @@ const (
 	SettingAutoRefreshFrom  = "auto_refresh_from"
 	SettingAutoRefreshTo    = "auto_refresh_to"
 	SettingFastInterval     = "fast_interval_sec"
+	SettingAutoUplink       = "auto_uplink"
 )
 
 // Roles of users and API tokens.
@@ -260,6 +261,12 @@ type Object struct {
 	// Role is what the port is for (uplink, core, server, access or empty).
 	// It is exported as the "role" label; uplinks can be polled faster.
 	Role string
+	// Neighbor is the device seen on the port by CDP or LLDP (its name as
+	// it announces itself), NeighborPort its port and NeighborProto "cdp"
+	// or "lldp". Discovery refreshes them; they are never set by hand.
+	Neighbor      string
+	NeighborPort  string
+	NeighborProto string
 }
 
 // Settings are the global defaults.
@@ -277,6 +284,9 @@ type Settings struct {
 	// FastIntervalSec polls ports with the role "uplink" this often, in a
 	// separate loop and scrape target (0 = with the rest of the device).
 	FastIntervalSec int
+	// AutoUplink gives new ports whose CDP/LLDP neighbour is another device
+	// in Zirox the role uplink and ticks them (after the port rules).
+	AutoUplink bool
 }
 
 // InRefreshWindow reports whether t falls into the scheduled refresh hours.
@@ -396,6 +406,7 @@ func (s *Store) Settings() Settings {
 		AutoRefreshFrom:  hour(s.intSetting(SettingAutoRefreshFrom, 1)),
 		AutoRefreshTo:    hour(s.intSetting(SettingAutoRefreshTo, 5)),
 		FastIntervalSec:  fastInterval(s.intSetting(SettingFastInterval, DefaultFastIntervalSec)),
+		AutoUplink:       s.GetSetting(SettingAutoUplink, "1") == "1",
 	}
 }
 
@@ -430,9 +441,12 @@ func (s *Store) SetObjectRoles(deviceID int64, roles map[int64]string) error {
 
 // SaveSettings stores the global defaults.
 func (s *Store) SaveSettings(st Settings) error {
-	auto := "0"
+	auto, autoUp := "0", "0"
 	if st.AutoSelectUp {
 		auto = "1"
+	}
+	if st.AutoUplink {
+		autoUp = "1"
 	}
 	for k, v := range map[string]string{
 		SettingInterval: strconv.Itoa(max(st.IntervalSec, MinIntervalSec)),
@@ -444,6 +458,7 @@ func (s *Store) SaveSettings(st Settings) error {
 		SettingAutoRefreshFrom:  strconv.Itoa(hour(st.AutoRefreshFrom)),
 		SettingAutoRefreshTo:    strconv.Itoa(hour(st.AutoRefreshTo)),
 		SettingFastInterval:     strconv.Itoa(fastInterval(st.FastIntervalSec)),
+		SettingAutoUplink:       autoUp,
 	} {
 		if err := s.SetSetting(k, v); err != nil {
 			return err
@@ -782,7 +797,7 @@ func (s *Store) SetDiscoveryError(id int64, msg string) error {
 
 // ---- objects ----
 
-const objCols = `id,device_id,kind,key,idx,name,descr,alias,if_type,speed_mbps,oper_status,factor,selected,state,role`
+const objCols = `id,device_id,kind,key,idx,name,descr,alias,if_type,speed_mbps,oper_status,factor,selected,state,role,neighbor,neighbor_port,neighbor_proto`
 
 // Objects returns all objects of a device ordered for display.
 func (s *Store) Objects(deviceID int64) ([]Object, error) {
@@ -794,7 +809,7 @@ func (s *Store) Objects(deviceID int64) ([]Object, error) {
 	var out []Object
 	for rows.Next() {
 		var o Object
-		if err := rows.Scan(&o.ID, &o.DeviceID, &o.Kind, &o.Key, &o.Idx, &o.Name, &o.Descr, &o.Alias, &o.IfType, &o.SpeedMbps, &o.OperStatus, &o.Factor, &o.Selected, &o.State, &o.Role); err != nil {
+		if err := rows.Scan(&o.ID, &o.DeviceID, &o.Kind, &o.Key, &o.Idx, &o.Name, &o.Descr, &o.Alias, &o.IfType, &o.SpeedMbps, &o.OperStatus, &o.Factor, &o.Selected, &o.State, &o.Role, &o.Neighbor, &o.NeighborPort, &o.NeighborProto); err != nil {
 			return nil, err
 		}
 		out = append(out, o)
@@ -817,13 +832,13 @@ func (s *Store) ApplyDiscovery(d Device, objs []Object) error {
 	if _, err := tx.Exec(`DELETE FROM objects WHERE device_id=?`, d.ID); err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare(`INSERT INTO objects(device_id,kind,key,idx,name,descr,alias,if_type,speed_mbps,oper_status,factor,selected,state,role) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+	stmt, err := tx.Prepare(`INSERT INTO objects(device_id,kind,key,idx,name,descr,alias,if_type,speed_mbps,oper_status,factor,selected,state,role,neighbor,neighbor_port,neighbor_proto) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 	for _, o := range objs {
-		if _, err := stmt.Exec(d.ID, o.Kind, o.Key, o.Idx, o.Name, o.Descr, o.Alias, o.IfType, o.SpeedMbps, o.OperStatus, o.Factor, o.Selected, o.State, o.Role); err != nil {
+		if _, err := stmt.Exec(d.ID, o.Kind, o.Key, o.Idx, o.Name, o.Descr, o.Alias, o.IfType, o.SpeedMbps, o.OperStatus, o.Factor, o.Selected, o.State, o.Role, o.Neighbor, o.NeighborPort, o.NeighborProto); err != nil {
 			return fmt.Errorf("insert %s/%s: %w", o.Kind, o.Key, err)
 		}
 	}

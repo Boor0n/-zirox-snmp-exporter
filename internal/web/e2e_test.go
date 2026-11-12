@@ -872,3 +872,75 @@ func TestConfigExportImportAndBackup(t *testing.T) {
 		t.Errorf("backup contents: %v", names)
 	}
 }
+
+func TestNeighborsMakeUplinks(t *testing.T) {
+	e := setup(t)
+	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	sw2 := snmptest.Switch(4)
+	sw2.Set("1.3.6.1.4.1.9.9.23.1.2.1.1.6.2.1", "SW1.lab.local(FOX123)")
+	sw2.Set("1.3.6.1.4.1.9.9.23.1.2.1.1.7.2.1", "Ethernet1/4")
+	sw2.Set("1.0.8802.1.1.2.1.4.1.1.9.0.3.1", "printer-7")
+	e.agents["10.0.0.2"] = sw2
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	add := func(addr, name string) {
+		e.post("/devices/new", url.Values{"address": {addr}, "name": {name}, "port": {"161"}, "enabled": {"on"},
+			"credential_id": {"1"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}})
+	}
+	e.post("/devices/new", url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
+		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}})
+	e.waitDiscovery(1)
+	add("10.0.0.2", "sw2")
+	e.waitDiscovery(2)
+
+	port := func(dev int64, name string) store.Object {
+		objs, _ := e.st.Objects(dev)
+		for _, o := range objs {
+			if o.Key == name {
+				return o
+			}
+		}
+		t.Fatalf("no %s on %d", name, dev)
+		return store.Object{}
+	}
+	// sw2's port to sw1 (down, so unticked by default) became a ticked uplink;
+	// the printer port did not.
+	if o := port(2, "Ethernet1/2"); !o.Selected || o.Role != "uplink" || o.Neighbor != "SW1.lab.local(FOX123)" || o.NeighborProto != "cdp" {
+		t.Errorf("sw2 Ethernet1/2 = %+v", o)
+	}
+	if o := port(2, "Ethernet1/3"); o.Role != "" || o.Neighbor != "printer-7" {
+		t.Errorf("sw2 Ethernet1/3 = %+v", o)
+	}
+	if _, page := e.get("/devices/2"); !strings.Contains(page, `<a href="/devices/1">SW1.lab.local(FOX123)</a> Ethernet1/4`) {
+		t.Error("device page does not link the neighbour")
+	}
+	if _, page := e.get("/rules"); !strings.Contains(page, "is a device in Zirox") {
+		t.Error("rules page lacks the built-in rule")
+	}
+
+	// sw1 learns about sw2 on a port it already knows: one Refresh makes it an uplink.
+	e.agents["10.0.0.1"].Set("1.3.6.1.4.1.9.9.23.1.2.1.1.6.4.1", "sw2")
+	e.post("/devices/1/refresh", nil)
+	e.waitDiscovery(1)
+	o := port(1, "Ethernet1/4")
+	if !o.Selected || o.Role != "uplink" {
+		t.Fatalf("sw1 Ethernet1/4 after refresh = %+v", o)
+	}
+	// A role cleared by hand stays cleared on the next refresh.
+	if err := e.st.SetObjectRoles(1, map[int64]string{o.ID: ""}); err != nil {
+		t.Fatal(err)
+	}
+	e.post("/devices/1/refresh", nil)
+	e.waitDiscovery(1)
+	if o := port(1, "Ethernet1/4"); o.Role != "" {
+		t.Errorf("hand-cleared role came back: %+v", o)
+	}
+	// The uplink is polled by the fast loop, so its neighbour is on the fast target.
+	deadline := time.Now().Add(5 * time.Second)
+	for e.en.FastSnapshot(2) == nil && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	_, probe := e.get("/probe?target=2&poll=fast")
+	if !strings.Contains(probe, `zirox_if_neighbor_info{ifIndex="2",ifName="Ethernet1/2",neighbor="SW1.lab.local(FOX123)",neighbor_port="Ethernet1/4",protocol="cdp"} 1`) {
+		t.Errorf("probe lacks the neighbour:\n%s", probe)
+	}
+}

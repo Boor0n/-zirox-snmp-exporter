@@ -1155,7 +1155,7 @@
         "x": 0,
         "y": 31
       },
-      "description": "Labels Zirox exports for this port: description, role, index.",
+      "description": "Labels Zirox exports for this port: description, role, index, and the CDP/LLDP neighbour.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1182,18 +1182,36 @@
           "range": false,
           "instant": true,
           "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "zirox_if_neighbor_info{device=\"$device\", ifName=\"$port\"}",
+          "legendFormat": "",
+          "refId": "B",
+          "range": false,
+          "instant": true,
+          "format": "table"
         }
       ],
       "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
         {
           "id": "organize",
           "options": {
             "excludeByName": {
               "Time": true,
-              "Value": true,
+              "Value #A": true,
+              "Value #B": true,
               "__name__": true,
               "job": true,
-              "instance": true
+              "instance": true,
+              "poll": true
             }
           }
         }

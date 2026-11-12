@@ -46,6 +46,8 @@ type cfgSettings struct {
 	AutoRefreshHours int  `yaml:"auto_refresh_hours"`
 	AutoRefreshFrom  int  `yaml:"auto_refresh_from"`
 	AutoRefreshTo    int  `yaml:"auto_refresh_to"`
+	// AutoUplink is a pointer so files from before v1.0 keep it on.
+	AutoUplink *bool `yaml:"neighbors_in_zirox_are_uplinks,omitempty"`
 }
 
 type cfgCred struct {
@@ -136,7 +138,7 @@ func parseRef(ref string, customKind map[string]string) (kind, key string, ok bo
 func (s *Server) exportConfig(withSecrets bool) (*Setup, error) {
 	c := &Setup{Format: configFormat, ExportedAt: time.Now().UTC().Format(time.RFC3339), Version: s.cfg.Version}
 	g := s.st.Settings()
-	c.Settings = &cfgSettings{g.IntervalSec, g.TimeoutSec, g.Retries, g.AutoSelectUp, g.FastIntervalSec, g.AutoRefreshHours, g.AutoRefreshFrom, g.AutoRefreshTo}
+	c.Settings = &cfgSettings{g.IntervalSec, g.TimeoutSec, g.Retries, g.AutoSelectUp, g.FastIntervalSec, g.AutoRefreshHours, g.AutoRefreshFrom, g.AutoRefreshTo, &g.AutoUplink}
 
 	creds, err := s.st.Credentials()
 	if err != nil {
@@ -268,7 +270,8 @@ func (s *Server) importConfig(c *Setup, apply bool) (*importResult, error) {
 		if apply {
 			x := c.Settings
 			if err := s.st.SaveSettings(store.Settings{IntervalSec: x.IntervalSec, TimeoutSec: x.TimeoutSec, Retries: x.Retries, AutoSelectUp: x.AutoSelectUp,
-				FastIntervalSec: x.UplinkIntervalS, AutoRefreshHours: x.AutoRefreshHours, AutoRefreshFrom: x.AutoRefreshFrom, AutoRefreshTo: x.AutoRefreshTo}); err != nil {
+				FastIntervalSec: x.UplinkIntervalS, AutoRefreshHours: x.AutoRefreshHours, AutoRefreshFrom: x.AutoRefreshFrom, AutoRefreshTo: x.AutoRefreshTo,
+				AutoUplink: x.AutoUplink == nil || *x.AutoUplink}); err != nil {
 				return nil, err
 			}
 		}
