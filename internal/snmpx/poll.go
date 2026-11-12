@@ -120,7 +120,11 @@ func PollDevice(s Session, objs []store.Object) (PollResult, error) {
 		oids   []string
 		groups []int
 	}
-	chunks := []chunk{{oids: []string{oidSysUpTime}}}
+	// sysUpTime rides in the first request, unless a custom OID polls it already.
+	chunks := []chunk{{}}
+	if _, ok := byOID[oidSysUpTime]; !ok {
+		chunks[0].oids = []string{oidSysUpTime}
+	}
 	for gi, g := range groups {
 		c := &chunks[len(chunks)-1]
 		if len(c.oids)+len(g.oids) > maxOidsPerGet && len(c.oids) > 0 {
@@ -167,7 +171,6 @@ func PollDevice(s Session, objs []store.Object) (PollResult, error) {
 			if name == oidSysUpTime {
 				res.Uptime = time.Duration(asFloat(p)) * 10 * time.Millisecond
 				res.HasUptime = true
-				continue
 			}
 			w, ok := byOID[name]
 			if !ok {
