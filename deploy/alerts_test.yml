@@ -144,7 +144,7 @@ tests:
       - eval_time: 6m
         alertname: ZiroxInterfaceFlapping
         exp_alerts:
-          - exp_labels: {severity: warning, device: sw2, ifName: Eth1/7, ifAlias: "", ifIndex: "7"}
+          - exp_labels: {severity: warning, device: sw2, ifName: Eth1/7, ifIndex: "7"}
             exp_annotations:
               summary: "Eth1/7 on sw2 is flapping"
               description: "The port changed state 6 times in 10 minutes (only changes between polls are seen)."
