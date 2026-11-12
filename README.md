@@ -4,6 +4,8 @@ An SNMP exporter for Prometheus with a web UI. You add devices in the browser. W
 
 **Quick start:** see [Install](#install), six steps from an empty Linux server to metrics in Prometheus.
 
+**По-русски:** [руководство](docs/ru/README.md) и [что делать при сбоях (runbook)](docs/ru/runbook.md).
+
 ## How it works
 
 1. **Add / Refresh.** A full walk of `ifTable`/`ifXTable`, CISCO-PROCESS-MIB, CISCO-MEMORY-POOL-MIB, CISCO-SYSTEM-EXT-MIB (Nexus), ENTITY-SENSOR-MIB, CISCO-ENVMON-MIB, HOST-RESOURCES-MIB, UCD-SNMP-MIB, CISCO-FIREWALL-MIB and CISCO-REMOTE-ACCESS-MONITOR-MIB (ASA), and BGP4-MIB.
