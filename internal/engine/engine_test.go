@@ -158,7 +158,7 @@ func TestRestartAndShiftTriggerRefresh(t *testing.T) {
 
 	prev := &Snapshot{OK: true, HasUptime: true, Uptime: 30 * 24 * time.Hour}
 	snap := &Snapshot{OK: true, HasUptime: true, Uptime: 3 * time.Minute, At: now}
-	e.checkConsistency(d, prev, snap)
+	e.checkConsistency(d, prev, snap, false)
 	wait()
 	if want := now.Add(-3 * time.Minute); !snap.LastReboot.Equal(want) {
 		t.Errorf("last restart = %v, want %v", snap.LastReboot, want)
@@ -171,21 +171,21 @@ func TestRestartAndShiftTriggerRefresh(t *testing.T) {
 	}
 
 	// A shift right after is held back by the pause...
-	e.checkConsistency(d, snap, &Snapshot{OK: true, Shifted: []string{"Ethernet1/1"}, At: now})
+	e.checkConsistency(d, snap, &Snapshot{OK: true, Shifted: []string{"Ethernet1/1"}, At: now}, false)
 	wait()
 	if log, _ := st.AuditLog("automatic refresh", 10); len(log) != 1 {
 		t.Fatalf("refresh not rate limited: %d", len(log))
 	}
 	// ...and runs once the pause is over.
 	now = now.Add(autoFixPause)
-	e.checkConsistency(d, snap, &Snapshot{OK: true, Shifted: []string{"Ethernet1/1"}, At: now})
+	e.checkConsistency(d, snap, &Snapshot{OK: true, Shifted: []string{"Ethernet1/1"}, At: now}, false)
 	wait()
 	if log, _ := st.AuditLog("automatic refresh", 10); len(log) != 2 || log[0].Details != "port numbering changed: Ethernet1/1" {
 		t.Fatalf("shift did not start a refresh: %+v", log)
 	}
 
 	// A 32-bit sysUpTime wrap after 497 days is not a restart.
-	e.checkConsistency(d, &Snapshot{HasUptime: true, Uptime: uptimeWrap - time.Minute}, &Snapshot{HasUptime: true, Uptime: time.Minute, At: now})
+	e.checkConsistency(d, &Snapshot{HasUptime: true, Uptime: uptimeWrap - time.Minute}, &Snapshot{HasUptime: true, Uptime: time.Minute, At: now}, false)
 	log, _ := st.AuditLog("device restarted", 10)
 	n := 0
 	for _, l := range log {

@@ -308,6 +308,12 @@ func uniqueKeys(objs []store.Object) []store.Object {
 // autoSelect is on; vanished ones are kept as missing so nothing is lost.
 // On the first discovery (no old objects) nothing is marked as new.
 func Merge(old, found []store.Object, autoSelect bool) []store.Object {
+	return MergeWithRules(old, found, autoSelect, nil, "")
+}
+
+// MergeWithRules is Merge where port rules decide the tick and role of ports
+// seen for the first time. Known ports keep their tick and role.
+func MergeWithRules(old, found []store.Object, autoSelect bool, rules store.Rules, group string) []store.Object {
 	prev := map[string]store.Object{}
 	for _, o := range old {
 		prev[o.Kind+"\x00"+o.Key] = o
@@ -318,6 +324,7 @@ func Merge(old, found []store.Object, autoSelect bool) []store.Object {
 		k := o.Kind + "\x00" + o.Key
 		if p, ok := prev[k]; ok {
 			o.Selected = p.Selected
+			o.Role = p.Role
 			o.State = store.StateActive
 			if p.State == store.StateNew {
 				o.State = store.StateNew
@@ -325,6 +332,9 @@ func Merge(old, found []store.Object, autoSelect bool) []store.Object {
 			delete(prev, k)
 		} else {
 			o.Selected = autoSelect && shouldAutoSelect(o)
+			if o.Kind == KindIf {
+				rules.Apply(&o, group, o.Selected)
+			}
 			if strings.HasPrefix(o.Kind, "custom_") {
 				// Custom OIDs carry their own auto-select switch.
 				o.Selected = autoSelectCustom(o.Kind)

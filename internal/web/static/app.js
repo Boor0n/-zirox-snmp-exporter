@@ -158,7 +158,7 @@
   let last = null;
   form.addEventListener('click', (e) => {
     const tr = e.target.closest('tr.obj');
-    if (!tr || e.target.closest('a, button, label')) return;
+    if (!tr || e.target.closest('a, button, label, select')) return;
     const box = tr.querySelector('input[name=obj]');
     if (!box || box.disabled) return;
     if (e.target !== box) box.checked = !box.checked;
@@ -259,6 +259,17 @@
     form.dispatchEvent(new Event('change'));
   }));
 
+  // Set the role of every visible port at once.
+  $$('[data-role-visible]', form).forEach((sel) => sel.addEventListener('change', () => {
+    if (sel.value === '-') return;
+    $$('select.role', form).forEach((r) => {
+      const tr = r.closest('tr');
+      if (!r.disabled && !tr.hidden && !tr.closest('[data-panel][hidden]')) r.value = sel.value;
+    });
+    sel.value = '-';
+    form.dispatchEvent(new Event('change'));
+  }));
+
   // Apply buttons show how many ticks would change.
   const boxes = $$('input[name=obj]', form);
   const initial = boxes.map((b) => b.checked);
@@ -266,9 +277,11 @@
   const syncApply = () => {
     let on = 0, off = 0;
     boxes.forEach((b, i) => { if (b.checked !== initial[i]) { if (b.checked) on++; else off++; } });
+    const roles = $$('select.role', form).filter((r) => r.value !== r.dataset.role).length;
+    const parts = [on ? '+' + on : '', off ? '−' + off : '', roles ? roles + (roles === 1 ? ' role' : ' roles') : ''].filter(Boolean);
     applies.forEach((b) => {
-      b.textContent = on || off ? 'Apply (' + [on ? '+' + on : '', off ? '−' + off : ''].filter(Boolean).join(' ') + ')' : 'Apply';
-      b.classList.toggle('pending', !!(on || off));
+      b.textContent = parts.length ? 'Apply (' + parts.join(' ') + ')' : 'Apply';
+      b.classList.toggle('pending', parts.length > 0);
     });
   };
   form.addEventListener('change', syncApply);

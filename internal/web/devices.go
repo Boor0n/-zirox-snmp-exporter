@@ -505,7 +505,7 @@ func (s *Server) deviceCard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "device", map[string]any{
 		"Device": d, "Groups": groups, "Snap": snap, "Eff": s.en.Resolve(d), "Discovering": s.en.Discovering(d.ID),
 		"New": nNew, "Missing": nMissing, "Credential": cred, "SampleCount": sampleCount(snap),
-		"Wizard": r.URL.Query().Get("wizard") == "1", "Rates": engine.PortRates(snap), "Tabs": tabs,
+		"Wizard": r.URL.Query().Get("wizard") == "1", "Rates": s.en.DeviceRates(d.ID), "Tabs": tabs,
 		"History": s.en.History(d.ID),
 	})
 }
@@ -595,8 +595,30 @@ func (s *Server) deviceSelection(w http.ResponseWriter, r *http.Request) {
 		redirectErr(w, r, fmt.Sprintf("/devices/%d", id), err)
 		return
 	}
+	// Roles come as role_<id> fields; only changed ones are written.
+	roles := map[int64]string{}
+	var roleNotes []string
+	for _, o := range before {
+		v, ok := r.Form[fmt.Sprintf("role_%d", o.ID)]
+		if !ok || len(v) == 0 {
+			continue
+		}
+		if nr := store.NormRole(v[0]); nr != o.Role {
+			roles[o.ID] = nr
+			roleNotes = append(roleNotes, fmt.Sprintf("%s=%s", o.Name, orNone(nr)))
+		}
+	}
+	if len(roles) > 0 {
+		if err := s.st.SetObjectRoles(id, roles); err != nil {
+			redirectErr(w, r, fmt.Sprintf("/devices/%d", id), err)
+			return
+		}
+	}
 	if d, err := s.st.Device(id); err == nil {
 		s.audit(r, "selection changed", d.Name, selectionChanges(before, sel))
+		if len(roleNotes) > 0 {
+			s.audit(r, "port roles changed", d.Name, shortList(roleNotes))
+		}
 	}
 	s.en.Reload(id)
 	redirect(w, r, fmt.Sprintf("/devices/%d", id), fmt.Sprintf("Applied: polling %d objects", len(sel)))
@@ -729,4 +751,11 @@ func (s *Server) bulkEditSummary(r *http.Request) string {
 		return "nothing"
 	}
 	return strings.Join(parts, ", ")
+}
+
+func orNone(s string) string {
+	if s == "" {
+		return "none"
+	}
+	return s
 }

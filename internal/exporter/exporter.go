@@ -77,7 +77,11 @@ func (x *Exporter) probe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reg := prometheus.NewRegistry()
-	reg.MustRegister(&deviceCollector{dev: d, snap: x.en.Snapshot(d.ID)})
+	if r.URL.Query().Get("poll") == "fast" {
+		reg.MustRegister(&fastCollector{snap: x.en.FastSnapshot(d.ID)})
+	} else {
+		reg.MustRegister(&deviceCollector{dev: d, snap: x.en.Snapshot(d.ID)})
+	}
 	promhttp.HandlerFor(reg, promhttp.HandlerOpts{ErrorHandling: promhttp.ContinueOnError}).ServeHTTP(w, r)
 }
 
@@ -134,6 +138,26 @@ func (x *Exporter) sd(w http.ResponseWriter, r *http.Request) {
 				"sysName":             d.SysName,
 			},
 		})
+		// Uplink ports polled at the fast interval get their own target, so
+		// Prometheus scrapes them as often as they are polled.
+		if eff.Fast > 0 && x.en.FastSnapshot(d.ID) != nil {
+			out = append(out, sdTarget{
+				Targets: []string{addr},
+				Labels: map[string]string{
+					"__metrics_path__":    "/probe",
+					"__param_target":      strconv.FormatInt(d.ID, 10),
+					"__param_poll":        "fast",
+					"__scrape_interval__": fmt.Sprintf("%ds", int(eff.Fast.Seconds())),
+					"__scrape_timeout__":  fmt.Sprintf("%ds", int(min(eff.Fast, 10*time.Second).Seconds())),
+					"instance":            d.Name,
+					"device":              d.Name,
+					"address":             d.Address,
+					"group":               d.Group,
+					"sysName":             d.SysName,
+					"poll":                "fast",
+				},
+			})
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
@@ -239,6 +263,9 @@ func (c *allCollector) Collect(ch chan<- prometheus.Metric) {
 			continue
 		}
 		emitDevice(ch, d, c.x.en.Snapshot(d.ID), []string{"device", "group"}, []string{d.Name, d.Group})
+		if fs := c.x.en.FastSnapshot(d.ID); fs != nil {
+			emitFast(ch, fs, []string{"device", "group"}, []string{d.Name, d.Group})
+		}
 	}
 }
 
@@ -274,5 +301,35 @@ func (c *selfCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	for k, v := range counts {
 		ch <- prometheus.MustNewConstMetric(descDevices, prometheus.GaugeValue, v, k)
+	}
+}
+
+// fastCollector exports the uplink ports polled at the fast interval.
+type fastCollector struct{ snap *engine.Snapshot }
+
+func (c *fastCollector) Describe(chan<- *prometheus.Desc) {}
+
+func (c *fastCollector) Collect(ch chan<- prometheus.Metric) { emitFast(ch, c.snap, nil, nil) }
+
+func emitFast(ch chan<- prometheus.Metric, snap *engine.Snapshot, extraKeys, extraVals []string) {
+	gauge := func(name, help string, v float64) {
+		d := prometheus.NewDesc(name, help, extraKeys, nil)
+		if m, err := prometheus.NewConstMetric(d, prometheus.GaugeValue, v, extraVals...); err == nil {
+			ch <- m
+		}
+	}
+	up := 0.0
+	if snap != nil && snap.OK {
+		up = 1
+	}
+	gauge("zirox_fast_poll_success", "1 if the last fast poll of the device's uplink ports succeeded.", up)
+	if snap == nil {
+		return
+	}
+	gauge("zirox_fast_poll_duration_seconds", "Duration of the last fast poll of uplink ports.", snap.Duration.Seconds())
+	gauge("zirox_fast_poll_interval_seconds", "Poll interval of uplink ports.", snap.Interval.Seconds())
+	descs := map[string]*prometheus.Desc{}
+	for _, s := range snap.Samples {
+		emitSample(ch, descs, s, extraKeys, extraVals)
 	}
 }

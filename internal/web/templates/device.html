@@ -74,6 +74,7 @@
     <span class="muted small" aria-live="polite"><b data-sel-count></b></span>
     {{if .CanEdit}}<button type="button" data-select-visible="1">Select visible</button>
     <button type="button" data-select-visible="0">Clear visible</button>
+    <label class="check small">Role of visible ports <select data-role-visible aria-label="Set the role of visible ports"><option value="-">…</option><option value="">none</option>{{range roles ""}}<option>{{.}}</option>{{end}}</select></label>
     <span class="badge warn" data-dirty hidden>Unsaved changes</span>
     <button class="primary" data-apply>Apply</button>{{end}}
   </div>
@@ -84,12 +85,12 @@
     <thead><tr>
       <th class="w1"><input type="checkbox" data-check-group aria-label="Select all {{.Category}}" {{if not $.CanEdit}}disabled{{end}}></th>
       <th>Name</th>{{if .HasDescr}}<th>Description</th>{{end}}
-      {{if eq .Category "Ports"}}<th>Type</th><th>Speed</th><th>Status</th><th class="num">In</th><th class="num">Out</th><th class="num">Load</th><th class="num">Errors</th>{{end}}
+      {{if eq .Category "Ports"}}<th>Type</th><th>Speed</th><th>Status</th><th class="num">In</th><th class="num">Out</th><th class="num">Load</th><th class="num">Errors</th><th>Role</th>{{end}}
       <th></th>
     </tr></thead>
     {{if .Modules}}
       {{range .Modules}}<tbody class="module">
-      <tr class="modrow"><th colspan="{{if $g.HasDescr}}11{{else}}10{{end}}"><label class="check"><input type="checkbox" data-check-module aria-label="Select all of {{.Name}}" {{if not $.CanEdit}}disabled{{end}}> {{.Name}}</label> <span class="muted small">{{len .Objects}} ports</span></th></tr>
+      <tr class="modrow"><th colspan="{{if $g.HasDescr}}12{{else}}11{{end}}"><label class="check"><input type="checkbox" data-check-module aria-label="Select all of {{.Name}}" {{if not $.CanEdit}}disabled{{end}}> {{.Name}}</label> <span class="muted small">{{len .Objects}} ports</span></th></tr>
       {{range .Objects}}{{template "objrow" (list2 $ $g .)}}{{end}}
       </tbody>{{end}}
     {{else}}
@@ -118,6 +119,7 @@
   <td class="num mono rin" data-live-in>{{if $r}}{{bits $r.InBps}}{{else}}<span class="muted">—</span>{{end}}</td>
   <td class="num mono rout" data-live-out>{{if $r}}{{bits $r.OutBps}}{{else}}<span class="muted">—</span>{{end}}</td>
   <td class="num" data-live-util>{{if and $r (ge $r.Util 0.0)}}<span class="load{{if ge $r.Util 90.0}} crit{{else if ge $r.Util 70.0}} hi{{end}}" style="--p:{{pct $r.Util}}%"><span>{{pct $r.Util}}%</span></span>{{else}}<span class="muted">—</span>{{end}}</td>
-  <td class="num mono" data-live-err>{{if $r}}{{with errrate $r.ErrPerMin}}<span class="bad">{{.}}</span>{{end}}{{end}}</td>{{end}}
+  <td class="num mono" data-live-err>{{if $r}}{{with errrate $r.ErrPerMin}}<span class="bad">{{.}}</span>{{end}}{{end}}</td>
+  <td class="nowrap"><select name="role_{{$o.ID}}" class="role" aria-label="Role of {{$o.Name}}" data-role="{{$o.Role}}" {{if not $.CanEdit}}disabled{{end}}><option value="">—</option>{{range roles $o.Role}}<option {{if eq . $o.Role}}selected{{end}}>{{.}}</option>{{end}}</select>{{if and (eq $o.Role "uplink") $.Eff.Fast}} <span class="badge run" title="Polled every {{secs $.Eff.Fast}} s">{{secs $.Eff.Fast}} s</span>{{end}}</td>{{end}}
   <td>{{if eq $o.State "new"}}<span class="badge new">new</span>{{else if eq $o.State "missing"}}<span class="badge bad">gone</span>{{end}}</td>
 </tr>{{end}}

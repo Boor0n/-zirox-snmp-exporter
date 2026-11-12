@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +101,11 @@ func (s *Server) Register(mux *http.ServeMux) {
 	a("GET /credentials/{id}/edit", s.credentialForm)
 	a("POST /credentials/{id}/edit", s.credentialSave)
 	a("POST /credentials/{id}/delete", s.credentialDelete)
+	p("GET /rules", s.rules)
+	a("POST /rules", s.ruleSave)
+	a("POST /rules/apply", s.rulesApply)
+	a("POST /rules/{id}/delete", s.ruleDelete)
+	a("POST /rules/{id}/move", s.ruleMove)
 	p("GET /profiles", s.profiles)
 	a("POST /profiles", s.profileSave)
 	a("POST /profiles/{id}/delete", s.profileDelete)
@@ -209,10 +215,17 @@ var funcs = template.FuncMap{
 		}
 		return nil
 	},
-	"pct":       func(v float64) int { return int(v + 0.5) },
-	"hm":        func(t time.Time) string { return t.Format("15:04") },
-	"list":      func(v ...string) []string { return v },
-	"list2":     func(v ...any) []any { return v },
+	"pct":   func(v float64) int { return int(v + 0.5) },
+	"hm":    func(t time.Time) string { return t.Format("15:04") },
+	"list":  func(v ...string) []string { return v },
+	"list2": func(v ...any) []any { return v },
+	// roles lists the role choices, plus cur when a rule set another word.
+	"roles": func(cur string) []string {
+		if cur == "" || slices.Contains(store.Roles, cur) {
+			return store.Roles
+		}
+		return append(slices.Clone(store.Roles), cur)
+	},
 	"hasPrefix": strings.HasPrefix,
 	"status":    rowStatus,
 	"speed":     speedText,
@@ -307,7 +320,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 // pageTitles name each page in the browser tab, so several open tabs can be told apart.
 var pageTitles = map[string]string{
 	"devices": "Devices", "device": "Device", "device_form": "Device", "credentials": "Credentials",
-	"credential_form": "Credentials", "profiles": "Poll profiles", "settings": "Settings", "import": "Import",
+	"credential_form": "Credentials", "profiles": "Poll profiles", "rules": "Port rules", "settings": "Settings", "import": "Import",
 	"custom_oids": "Custom OIDs", "overview": "Overview", "search": "Search", "diagnose": "Diagnostics", "check": "Access check", "scan": "Find devices", "prometheus": "Prometheus", "audit": "Change log", "users": "Users", "login": "Log in",
 }
 

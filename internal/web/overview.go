@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Boor0n/zirox-snmp-exporter/internal/engine"
 	"github.com/Boor0n/zirox-snmp-exporter/internal/store"
 )
 
@@ -132,10 +131,14 @@ func (s *Server) deviceLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snap := s.en.Snapshot(d.ID)
-	out := liveJSON{Interval: int(s.en.Resolve(d).Interval.Seconds()), Ports: map[string]livePort{}}
+	eff := s.en.Resolve(d)
+	if eff.Fast > 0 && s.en.FastSnapshot(d.ID) != nil {
+		eff.Interval = eff.Fast
+	}
+	out := liveJSON{Interval: int(eff.Interval.Seconds()), Ports: map[string]livePort{}}
 	if snap != nil {
 		out.OK, out.Err, out.At = snap.OK, snap.Err, snap.At.Unix()
-		for id, pr := range engine.PortRates(snap) {
+		for id, pr := range s.en.DeviceRates(d.ID) {
 			out.Ports[fmt.Sprint(id)] = livePort{In: bitsText(pr.InBps), Out: bitsText(pr.OutBps), Util: pr.Util, Err: errText(pr.ErrPerMin)}
 		}
 	}

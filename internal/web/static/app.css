@@ -300,3 +300,4 @@ button.primary.pending { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 
 .bulkedit summary::-webkit-details-marker { display: none; }
 .bulkedit[open] > .card { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 5; width: min(560px, 90vw); box-shadow: 0 6px 24px rgb(0 0 0 / .15); color: var(--fg); }
 .bulkedit .check input[name=group] { width: 160px; }
+select.role { padding: 1px 4px; font-size: 12px; min-height: 0; }

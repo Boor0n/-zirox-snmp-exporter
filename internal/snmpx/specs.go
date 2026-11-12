@@ -51,9 +51,11 @@ var cpuLabels = []string{"index", "name", "window"}
 // Kinds maps an object kind to its spec.
 var Kinds = map[string]Kind{
 	KindIf: {
-		Category:  "Ports",
-		LabelKeys: []string{"ifIndex", "ifName", "ifDescr", "ifAlias"},
-		Labels:    func(o store.Object) []string { return []string{o.Idx, o.Name, o.Descr, o.Alias} },
+		Category: "Ports",
+		// role is empty for most ports; Prometheus drops empty labels, so
+		// their series are the same as before roles existed.
+		LabelKeys: []string{"ifIndex", "ifName", "ifDescr", "ifAlias", "role"},
+		Labels:    func(o store.Object) []string { return []string{o.Idx, o.Name, o.Descr, o.Alias, o.Role} },
 		Metrics: []Metric{
 			{Name: "ifHCInOctets", Help: "Octets received (64-bit).", OID: "1.3.6.1.2.1.31.1.1.1.6", Counter: true, NotV1: true},
 			{Name: "ifHCOutOctets", Help: "Octets sent (64-bit).", OID: "1.3.6.1.2.1.31.1.1.1.10", Counter: true, NotV1: true},

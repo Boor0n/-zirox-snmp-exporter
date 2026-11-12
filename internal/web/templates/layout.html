@@ -25,6 +25,7 @@
     <div class="navsec">Setup</div>
     <a href="/credentials" {{if or (eq .Page "credentials") (eq .Page "credential_form")}}class="on" aria-current="page"{{end}}>Credentials</a>
     <a href="/profiles" {{if eq .Page "profiles"}}class="on" aria-current="page"{{end}}>Poll profiles</a>
+    <a href="/rules" {{if eq .Page "rules"}}class="on" aria-current="page"{{end}}>Port rules</a>
     <a href="/custom-oids" {{if eq .Page "custom_oids"}}class="on" aria-current="page"{{end}}>Custom OIDs</a>
     {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on" aria-current="page"{{end}}>Import CSV</a>
     <a href="/scan" {{if eq .Page "scan"}}class="on" aria-current="page"{{end}}>Find devices</a>{{end}}
