@@ -197,3 +197,45 @@ func TestRestartAndShiftTriggerRefresh(t *testing.T) {
 		t.Errorf("wrap counted as restart: %d entries", n)
 	}
 }
+
+func TestPortRates(t *testing.T) {
+	t0 := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
+	mk := func(name string, v float64) snmpx.Sample { return snmpx.Sample{Name: name, Value: v, Obj: 7} }
+	s := &Snapshot{OK: true, At: t0.Add(10 * time.Second), PrevAt: t0,
+		Prev: []snmpx.Sample{mk("ifHCInOctets", 1000), mk("ifHCOutOctets", 5000), mk("ifInErrors", 3), mk("ifOutErrors", 0)},
+		Samples: []snmpx.Sample{mk("ifHCInOctets", 1000+12_500_000), mk("ifHCOutOctets", 4000), mk("ifInErrors", 5), mk("ifOutErrors", 0),
+			mk("ifHighSpeed", 100), {Name: "zirox_cpu_utilization_percent", Value: 5, Obj: 9}},
+	}
+	r := PortRates(s)
+	got := r[7]
+	if got.InBps != 10e6 || got.OutBps != 0 || got.ErrPerMin != 12 || got.Util != 10 {
+		t.Errorf("rates = %+v", got)
+	}
+	if _, ok := r[9]; ok {
+		t.Error("CPU must not get port rates")
+	}
+	if len(PortRates(&Snapshot{OK: true, At: t0})) != 0 {
+		t.Error("no previous poll, no rates")
+	}
+}
+
+func TestHistory(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.Open(filepath.Join(dir, "z.db"))
+	defer st.Close()
+	key, _ := secret.LoadKey("", filepath.Join(dir, "k"))
+	box, _ := secret.New(key)
+	now := time.Date(2026, 11, 12, 10, 40, 0, 0, time.UTC)
+	e := New(st, box, Options{Now: func() time.Time { return now }})
+	e.record(1, now.Add(-25*time.Hour), false) // too old, overwritten bucket
+	e.record(1, now.Add(-time.Hour), true)
+	e.record(1, now.Add(-time.Hour), false)
+	e.record(1, now, true)
+	h := e.History(1)
+	if len(h) != historySlots {
+		t.Fatalf("%d buckets", len(h))
+	}
+	if h[len(h)-1].State() != "ok" || h[len(h)-3].State() != "mixed" || h[0].State() != "none" {
+		t.Errorf("states: last %s, -1h %s, first %s", h[len(h)-1].State(), h[len(h)-3].State(), h[0].State())
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -829,6 +830,56 @@ func (s *Store) ObjectCounts() (map[int64][2]int, error) {
 			return nil, err
 		}
 		out[id] = [2]int{sel, total}
+	}
+	return out, rows.Err()
+}
+
+// NewObjectCounts returns, per device, how many objects found by the last
+// Refresh still wait to be looked at (state "new").
+func (s *Store) NewObjectCounts() (map[int64]int, error) {
+	rows, err := s.db.Query(`SELECT device_id, COUNT(*) FROM objects WHERE state='new' GROUP BY device_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int{}
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
+// ObjectHit is an object found by a search, with its device.
+type ObjectHit struct {
+	Object
+	DeviceName string
+}
+
+// SearchObjects finds ports and other objects by name, description or
+// ifAlias (case-insensitive substring).
+func (s *Store) SearchObjects(q string, limit int) ([]ObjectHit, error) {
+	like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(strings.ToLower(q)) + "%"
+	rows, err := s.db.Query(`SELECT o.id,o.device_id,o.kind,o.key,o.idx,o.name,o.descr,o.alias,o.if_type,o.speed_mbps,o.oper_status,o.factor,o.selected,o.state,d.name
+		FROM objects o JOIN devices d ON d.id=o.device_id
+		WHERE lower(o.name) LIKE ? ESCAPE '\' OR lower(o.alias) LIKE ? ESCAPE '\' OR lower(o.descr) LIKE ? ESCAPE '\'
+		ORDER BY d.name, o.kind, o.name LIMIT ?`, like, like, like, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ObjectHit
+	for rows.Next() {
+		var h ObjectHit
+		o := &h.Object
+		if err := rows.Scan(&o.ID, &o.DeviceID, &o.Kind, &o.Key, &o.Idx, &o.Name, &o.Descr, &o.Alias, &o.IfType, &o.SpeedMbps, &o.OperStatus, &o.Factor, &o.Selected, &o.State, &h.DeviceName); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
 	}
 	return out, rows.Err()
 }

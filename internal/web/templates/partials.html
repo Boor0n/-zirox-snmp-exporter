@@ -57,3 +57,5 @@
   <li class="{{if eq . 3}}on{{end}}"><span>3</span> Choose ports</li>
 </ol>
 {{end}}
+
+{{define "history"}}<div class="avail" role="img" aria-label="Availability by half hour, oldest on the left">{{range .}}<i class="a-{{.State}}" title="{{hm .Start}}: {{if eq .State "none"}}not polled{{else}}{{.OK}} ok, {{.Fail}} failed{{end}}"></i>{{end}}</div>{{end}}

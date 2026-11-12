@@ -51,7 +51,7 @@
   <div class="buttons">
     <button class="primary">{{if $d.ID}}Save{{else}}Add and discover{{end}}</button>
     <button formaction="/devices/test" formnovalidate>{{if $d.ID}}Test connection{{else}}Check access{{end}}</button>
-    <a href="{{if $d.ID}}/devices/{{$d.ID}}{{else}}/{{end}}">Cancel</a>
+    <a href="{{if $d.ID}}/devices/{{$d.ID}}{{else}}/devices{{end}}">Cancel</a>
   </div>
 </form>
 {{if $d.ID}}

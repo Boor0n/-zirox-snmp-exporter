@@ -4,17 +4,17 @@
   {{if .CanEdit}}<a class="btn primary" href="/devices/new">+ Add device</a>{{end}}
 </div>
 <nav class="stats" aria-label="Filter by status">
-  <a href="/{{if or .Q .Group}}?q={{.Q}}&amp;group={{.Group}}{{end}}" class="stat{{if not .Status}} on{{end}}" {{if not .Status}}aria-current="true"{{end}}>All <b>{{.Total}}</b></a>
+  <a href="/devices{{if or .Q .Group}}?q={{.Q}}&amp;group={{.Group}}{{end}}" class="stat{{if not .Status}} on{{end}}" {{if not .Status}}aria-current="true"{{end}}>All <b>{{.Total}}</b></a>
   {{$s := .Status}}{{$q := .Q}}{{$g := .Group}}
   {{range $k := (list "failing" "ok" "discovering" "pending" "disabled")}}{{$n := index $.Stats $k}}
-  <a href="/?status={{$k}}{{if $q}}&amp;q={{$q}}{{end}}{{if $g}}&amp;group={{$g}}{{end}}" class="stat st-{{$k}}{{if eq $s $k}} on{{end}}{{if not $n}} zero{{end}}" {{if eq $s $k}}aria-current="true"{{end}}><span class="dot" aria-hidden="true"></span>{{if eq $k "failing"}}Errors{{else if eq $k "ok"}}Polling OK{{else if eq $k "discovering"}}Discovering{{else if eq $k "pending"}}Pending{{else}}Disabled{{end}} <b>{{$n}}</b></a>
+  <a href="/devices?status={{$k}}{{if $q}}&amp;q={{$q}}{{end}}{{if $g}}&amp;group={{$g}}{{end}}" class="stat st-{{$k}}{{if eq $s $k}} on{{end}}{{if not $n}} zero{{end}}" {{if eq $s $k}}aria-current="true"{{end}}><span class="dot" aria-hidden="true"></span>{{if eq $k "failing"}}Errors{{else if eq $k "ok"}}Polling OK{{else if eq $k "discovering"}}Discovering{{else if eq $k "pending"}}Pending{{else}}Disabled{{end}} <b>{{$n}}</b></a>
   {{end}}
 </nav>
-<form class="filters" method="get" action="/" role="search">
-  <input type="search" name="q" value="{{.Q}}" placeholder="Search: name, IP, sysName, group" aria-label="Search devices" data-hotkey="/">
+<form class="filters" method="get" action="/devices" role="search">
+  <input type="search" name="q" value="{{.Q}}" placeholder="Search: name, IP, sysName, group" aria-label="Search devices">
   <select name="group" aria-label="Group"><option value="">All groups</option>{{range .Groups}}<option {{if eq . $.Group}}selected{{end}}>{{.}}</option>{{end}}</select>
   <input type="hidden" name="status" value="{{.Status}}">
-  <button>Search</button>{{if or .Q .Group .Status}} <a href="/">Reset filters</a>{{end}}
+  <button>Search</button>{{if or .Q .Group .Status}} <a href="/devices">Reset filters</a>{{end}}
 </form>
 {{if .AnyDiscovering}}<div data-autoreload="5"></div>{{end}}
 <form method="post" action="/devices/bulk" id="bulk">
@@ -36,6 +36,7 @@
       {{else if not .Snap}}<span class="badge">waiting for poll</span>
       {{else if .Snap.OK}}<span class="badge ok">OK</span>
       {{else}}<span class="badge bad" title="{{.Snap.Fails}} failed polls in a row">error ×{{.Snap.Fails}}</span><div class="errtext small" title="{{.Snap.Err}}">{{.Snap.Err}}</div>{{end}}
+      {{if and .Enabled .Snap}}<div class="mini">{{template "history" .History}}</div>{{end}}
     </td>
     <td data-v="{{.Selected}}" class="nowrap">{{.Selected}} <span class="muted">/ {{.Total}}</span></td>
     <td data-v="{{secs .Eff.Interval}}" title="Source: {{.Eff.Source}}" class="nowrap">{{secs .Eff.Interval}} s</td>
@@ -46,7 +47,7 @@
     {{end}}</td>
   </tr>
   {{else}}
-  <tr><td colspan="8" class="empty">{{if or .Q .Group .Status}}No devices match these filters. <a href="/">Show all devices</a>.{{else}}No devices yet.{{if $.CanEdit}} <a href="/devices/new">Add the first one</a> or <a href="/import">import a CSV</a>.{{end}}{{end}}</td></tr>
+  <tr><td colspan="8" class="empty">{{if or .Q .Group .Status}}No devices match these filters. <a href="/devices">Show all devices</a>.{{else}}No devices yet.{{if $.CanEdit}} <a href="/devices/new">Add the first one</a> or <a href="/import">import a CSV</a>.{{end}}{{end}}</td></tr>
   {{end}}
   </tbody>
 </table></div>
@@ -56,6 +57,16 @@
   <button name="action" value="refresh">Refresh</button>
   <button name="action" value="enable">Enable</button>
   <button name="action" value="disable">Disable</button>
+  <details class="bulkedit">
+    <summary class="btn">Change…</summary>
+    <div class="card inline-form">
+      <label>Group<br><span class="check"><input type="checkbox" name="set_group" value="1" aria-label="Change group"> <input name="group" list="grouplist" placeholder="empty = no group" aria-label="New group"></span></label>
+      <datalist id="grouplist">{{range .Groups}}<option value="{{.}}">{{end}}</datalist>
+      <label>Poll profile<br><select name="profile_id"><option value="keep">keep as is</option><option value="0">Global settings</option>{{range .Profiles}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+      <label>Credentials<br><select name="credential_id"><option value="keep">keep as is</option>{{range .Creds}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+      <div class="buttons"><button class="primary" name="action" value="edit">Apply to selected</button></div>
+    </div>
+  </details>
   <button name="action" value="delete" class="danger" data-confirm="Delete the selected devices? Their settings and ticked ports are removed.">Delete</button>
 </div>{{end}}
 </form>

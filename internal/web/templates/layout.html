@@ -4,28 +4,43 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{if and .Device .Device.Name}}{{.Device.Name}} · {{else if .Title}}{{.Title}} · {{end}}Zirox SNMP</title>
+<script>try{var t=localStorage.getItem('zirox-theme');if(t)document.documentElement.dataset.theme=t;if(localStorage.getItem('zirox-dense')==='1')document.documentElement.classList.add('dense')}catch(e){}</script>
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/app.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 {{if .User}}
-<header class="top">
-  <a class="brand" href="/">Zirox SNMP <span class="ver">{{.Version}}</span></a>{{with .UpdateTag}}<a class="badge new upd" href="{{$.UpdateURL}}" target="_blank" rel="noopener" title="A newer Zirox is available; rerun the install command to upgrade">{{.}} available</a>{{end}}
+<div class="shell">
+<aside class="side">
+  <a class="brand" href="/">Zirox SNMP <span class="ver">{{.Version}}</span></a>
+  <form class="gsearch" method="get" action="/search" role="search">
+    <input type="search" name="q" value="{{.SearchQ}}" placeholder="Search devices and ports" aria-label="Search devices and ports" data-hotkey="/">
+  </form>
   <nav aria-label="Main">
-    <a href="/" {{if or (eq .Page "devices") (eq .Page "device") (eq .Page "device_form")}}class="on" aria-current="page"{{end}}>Devices</a>
+    <div class="navsec">Monitoring</div>
+    <a href="/" {{if eq .Page "overview"}}class="on" aria-current="page"{{end}}>Overview</a>
+    <a href="/devices" {{if or (eq .Page "devices") (eq .Page "device") (eq .Page "device_form") (eq .Page "diagnose")}}class="on" aria-current="page"{{end}}>Devices</a>
+    <a href="/audit" {{if eq .Page "audit"}}class="on" aria-current="page"{{end}}>Change log</a>
+    <div class="navsec">Setup</div>
     <a href="/credentials" {{if or (eq .Page "credentials") (eq .Page "credential_form")}}class="on" aria-current="page"{{end}}>Credentials</a>
     <a href="/profiles" {{if eq .Page "profiles"}}class="on" aria-current="page"{{end}}>Poll profiles</a>
-    {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on" aria-current="page"{{end}}>Import</a>
-    <a href="/scan" {{if eq .Page "scan"}}class="on" aria-current="page"{{end}}>Find devices</a>{{end}}
     <a href="/custom-oids" {{if eq .Page "custom_oids"}}class="on" aria-current="page"{{end}}>Custom OIDs</a>
+    {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on" aria-current="page"{{end}}>Import CSV</a>
+    <a href="/scan" {{if eq .Page "scan"}}class="on" aria-current="page"{{end}}>Find devices</a>{{end}}
+    <div class="navsec">System</div>
     <a href="/settings" {{if eq .Page "settings"}}class="on" aria-current="page"{{end}}>Settings</a>
     <a href="/prometheus" {{if eq .Page "prometheus"}}class="on" aria-current="page"{{end}}>Prometheus</a>
-    <a href="/audit" {{if eq .Page "audit"}}class="on" aria-current="page"{{end}}>Change log</a>
     {{if .CanEdit}}<a href="/users" {{if eq .Page "users"}}class="on" aria-current="page"{{end}}>Users</a>{{end}}
   </nav>
-  <form method="post" action="/logout" class="logout"><span>{{.User}}{{if not .CanEdit}} <span class="badge">read-only</span>{{end}}</span><button class="link">Log out</button></form>
-</header>
+  <div class="sidefoot">
+    {{with .UpdateTag}}<a class="badge new upd" href="{{$.UpdateURL}}" target="_blank" rel="noopener" title="A newer Zirox is available; rerun the install command to upgrade">{{.}} available</a>{{end}}
+    <button type="button" class="link" data-theme-toggle aria-label="Switch colour theme">Theme: <span data-theme-name>auto</span></button>
+    <button type="button" class="link" data-dense-toggle aria-pressed="false">Compact tables</button>
+    <form method="post" action="/logout" class="logout"><span>{{.User}}{{if not .CanEdit}} <span class="badge">read-only</span>{{end}}</span><button class="link">Log out</button></form>
+  </div>
+</aside>
+<div class="content">
 {{end}}
 <main id="main">
 {{with .Flash}}<div class="flash ok" role="status">{{.}}</div>{{end}}
@@ -33,6 +48,7 @@
 {{with .FlashWarn}}<div class="flash warn" role="status">{{.}}</div>{{end}}
 {{template "content" .}}
 </main>
-<footer>Zirox SNMP Exporter {{.Version}}{{with .UpdateTag}} · <a href="{{$.UpdateURL}}" target="_blank" rel="noopener" class="badge new">{{.}} available</a> <span class="muted small">rerun the install command to upgrade</span>{{end}}</footer>
+<footer>Zirox SNMP Exporter {{.Version}}{{with .UpdateTag}} · <a href="{{$.UpdateURL}}" target="_blank" rel="noopener">{{.}} available</a> <span class="muted small">rerun the install command to upgrade</span>{{end}}</footer>
+{{if .User}}</div></div>{{end}}
 </body>
 </html>{{end}}

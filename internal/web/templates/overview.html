@@ -1,0 +1,42 @@
+{{define "content"}}
+<div data-autoreload="60"></div>
+<div class="bar">
+  <h1>Overview</h1>
+  {{if .CanEdit}}<a class="btn primary" href="/devices/new">+ Add device</a>{{end}}
+</div>
+<div class="kpis">
+  <a class="kpi st-ok" href="/devices?status=ok"><span class="dot" aria-hidden="true"></span><b>{{index .Counts "ok"}}</b> polling OK</a>
+  <a class="kpi st-failing" href="/devices?status=failing"><span class="dot" aria-hidden="true"></span><b>{{index .Counts "failing"}}</b> not answering</a>
+  <a class="kpi st-discovering" href="/devices?status=failing"><span class="dot" aria-hidden="true"></span><b>{{index .Counts "discovery"}}</b> never discovered</a>
+  <span class="kpi st-pending"><span class="dot" aria-hidden="true"></span><b>{{index .Counts "slow"}}</b> polls over interval</span>
+</div>
+<p class="muted small">{{.Total}} devices{{with index .Counts "disabled"}}, {{.}} disabled{{end}}{{with index .Counts "pending"}}, {{.}} waiting for the first poll{{end}}.</p>
+
+<div class="cols">
+<section>
+  <h2>Needs attention <span class="muted small">{{len .Items}}</span></h2>
+  {{if .Items}}
+  <div class="table-wrap"><table class="list">
+    <thead><tr><th>Device</th><th>What</th><th>Since</th></tr></thead>
+    <tbody>
+    {{range .Items}}
+    <tr class="sev{{.Severity}}">
+      <td><a href="{{.Link}}"><b>{{.Device.Name}}</b></a><div class="muted small">{{.Device.Address}}{{with .Device.Group}} · {{.}}{{end}}</div></td>
+      <td><b>{{.What}}</b>{{with .Detail}}<div class="small errtext" title="{{.}}">{{.}}</div>{{end}}</td>
+      <td class="nowrap small">{{if not .Since.IsZero}}{{ago .Since}}{{end}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{else}}<div class="card empty">Nothing needs attention. All enabled devices answer and their polls fit the interval.</div>{{end}}
+</section>
+<section>
+  <h2>Recent events</h2>
+  <ul class="events card">
+    {{range .Events}}<li><span class="muted small nowrap">{{ago .At}}</span> <b>{{.Action}}</b> {{.Target}}{{with .Details}} <span class="muted small">{{.}}</span>{{end}}{{if ne .User "system"}} <span class="muted small">by {{.User}}</span>{{end}}</li>
+    {{else}}<li class="muted">No events yet.</li>{{end}}
+  </ul>
+  <a class="small" href="/audit">Full change log</a>
+</section>
+</div>
+{{end}}

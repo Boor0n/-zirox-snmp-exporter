@@ -160,7 +160,7 @@ func (s *Server) StartCheck(ids []int64, title string) string {
 func (s *Server) checkPage(w http.ResponseWriter, r *http.Request) {
 	j := s.jobs.get(r.PathValue("job"))
 	if j == nil || j.Kind != "check" {
-		redirect(w, r, "/", "That check has expired; run it again")
+		redirect(w, r, "/devices", "That check has expired; run it again")
 		return
 	}
 	done, fin := j.progress()
@@ -381,10 +381,10 @@ func (s *Server) scanAdd(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "devices added from scan", fmt.Sprintf("%d devices", len(names)), shortList(names))
 	}
 	if len(failed) > 0 {
-		redirectErr(w, r, "/", fmt.Errorf("added %d, failed: %s", len(names), strings.Join(failed, "; ")))
+		redirectErr(w, r, "/devices", fmt.Errorf("added %d, failed: %s", len(names), strings.Join(failed, "; ")))
 		return
 	}
-	redirect(w, r, "/", fmt.Sprintf("Added %d devices; full discovery is running", len(ids)))
+	redirect(w, r, "/devices", fmt.Sprintf("Added %d devices; full discovery is running", len(ids)))
 }
 
 // deviceNameFor names a scanned device after sysName without the domain.
