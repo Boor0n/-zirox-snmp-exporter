@@ -162,7 +162,12 @@ type APIToken struct {
 	CreatedBy string
 	CreatedAt time.Time
 	LastUsed  time.Time
+	// Expires is when the token stops working; zero = never.
+	Expires time.Time
 }
+
+// Expired reports whether the token can no longer be used.
+func (t APIToken) Expired(now time.Time) bool { return !t.Expires.IsZero() && !now.Before(t.Expires) }
 
 // Custom OID modes.
 const (
@@ -1066,13 +1071,16 @@ func (s *Store) DeleteUser(id int64) error {
 
 // ---- API tokens ----
 
-const tokenCols = `id,name,hash,role,created_by,created_at,last_used`
+const tokenCols = `id,name,hash,role,created_by,created_at,last_used,expires_at`
 
 func scanToken(sc interface{ Scan(...any) error }) (APIToken, error) {
 	var t APIToken
-	var at, used int64
-	err := sc.Scan(&t.ID, &t.Name, &t.Hash, &t.Role, &t.CreatedBy, &at, &used)
+	var at, used, exp int64
+	err := sc.Scan(&t.ID, &t.Name, &t.Hash, &t.Role, &t.CreatedBy, &at, &used, &exp)
 	t.CreatedAt = time.Unix(at, 0)
+	if exp > 0 {
+		t.Expires = time.Unix(exp, 0)
+	}
 	if used > 0 {
 		t.LastUsed = time.Unix(used, 0)
 	}
@@ -1112,12 +1120,26 @@ func (s *Store) CreateAPIToken(t *APIToken) error {
 		return fmt.Errorf("unknown role %q", t.Role)
 	}
 	t.CreatedAt = time.Now()
-	res, err := s.db.Exec(`INSERT INTO api_tokens(name,hash,role,created_by,created_at) VALUES(?,?,?,?,?)`,
-		t.Name, t.Hash, t.Role, t.CreatedBy, t.CreatedAt.Unix())
+	var exp int64
+	if !t.Expires.IsZero() {
+		exp = t.Expires.Unix()
+	}
+	res, err := s.db.Exec(`INSERT INTO api_tokens(name,hash,role,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?)`,
+		t.Name, t.Hash, t.Role, t.CreatedBy, t.CreatedAt.Unix(), exp)
 	if err != nil {
 		return err
 	}
 	t.ID, err = res.LastInsertId()
+	return err
+}
+
+// SetAPITokenExpiry changes when a token stops working (zero = never).
+func (s *Store) SetAPITokenExpiry(id int64, at time.Time) error {
+	var exp int64
+	if !at.IsZero() {
+		exp = at.Unix()
+	}
+	_, err := s.db.Exec(`UPDATE api_tokens SET expires_at=? WHERE id=?`, exp, id)
 	return err
 }
 

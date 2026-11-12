@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -64,7 +65,7 @@ func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, data map[st
 	if data == nil {
 		data = map[string]any{}
 	}
-	data["Users"], data["Tokens"], data["Me"] = users, tokens, s.sessionUser(r)
+	data["Users"], data["Tokens"], data["Me"], data["Now"] = users, tokens, s.sessionUser(r), time.Now()
 	s.render(w, r, "users", data)
 }
 
@@ -173,6 +174,9 @@ func (s *Server) tokenCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := tokenPrefix + base64.RawURLEncoding.EncodeToString(b)
 	t := store.APIToken{Name: name, Hash: hashToken(tok), Role: formRole(r), CreatedBy: s.sessionUser(r)}
+	if days := formInt(r, "expires_days"); days > 0 {
+		t.Expires = time.Now().AddDate(0, 0, days)
+	}
 	if err := s.st.CreateAPIToken(&t); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			err = errors.New("a token with this name already exists")
@@ -180,7 +184,11 @@ func (s *Server) tokenCreate(w http.ResponseWriter, r *http.Request) {
 		redirectErr(w, r, "/users", err)
 		return
 	}
-	s.audit(r, "API token created", t.Name, t.Role)
+	exp := "never expires"
+	if !t.Expires.IsZero() {
+		exp = "expires " + t.Expires.Format("2006-01-02")
+	}
+	s.audit(r, "API token created", t.Name, t.Role+", "+exp)
 	w.Header().Set("Cache-Control", "no-store")
 	s.renderUsers(w, r, map[string]any{"NewToken": tok, "NewTokenName": t.Name})
 }

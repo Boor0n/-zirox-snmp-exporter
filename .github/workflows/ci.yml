@@ -27,6 +27,10 @@ jobs:
           ZIROX_TEST_SNMP: 127.0.0.1:1161
           ZIROX_SCALE: 300
       - run: docker build -t zirox-snmp-exporter:ci .
+      - name: Upgrade test (database of older releases opened by this build)
+        run: |
+          go build -o /tmp/zirox-new ./cmd/zirox
+          for v in v0.3.0 v0.8.0; do sh deploy/ci/upgrade-test.sh "$v" /tmp/zirox-new; done
       - name: Check Prometheus alert rules and Grafana dashboard
         run: |
           curl -sSfL https://github.com/prometheus/prometheus/releases/download/v3.5.0/prometheus-3.5.0.linux-amd64.tar.gz \

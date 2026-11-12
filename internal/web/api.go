@@ -51,6 +51,10 @@ func (s *Server) apiAuth(write bool, h http.HandlerFunc) http.Handler {
 			apiError(w, http.StatusUnauthorized, "unknown or revoked API token")
 			return
 		}
+		if t.Expired(time.Now()) {
+			apiError(w, http.StatusUnauthorized, "API token "+t.Name+" expired on "+t.Expires.Format("2006-01-02")+": create a new one in Users")
+			return
+		}
 		if write && t.Role != store.RoleAdmin {
 			apiError(w, http.StatusForbidden, "read-only token")
 			return

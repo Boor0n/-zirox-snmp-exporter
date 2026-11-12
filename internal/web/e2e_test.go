@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,7 +36,20 @@ type env struct {
 	c      *http.Client
 	st     *store.Store
 	en     *engine.Engine
+	mu     sync.Mutex // guards agents: tests add devices while the engine polls
 	agents map[string]*snmptest.Agent
+}
+
+func (e *env) setAgent(addr string, a *snmptest.Agent) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.agents[addr] = a
+}
+
+func (e *env) agent(addr string) *snmptest.Agent {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.agents[addr]
 }
 
 func setup(t *testing.T) *env {
@@ -60,8 +74,8 @@ func setup(t *testing.T) *env {
 	snmpx.SourceAddress = func(string) string { return "192.0.2.10" }
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	e.en = engine.New(st, box, engine.Options{NoJitter: true, Log: log, Probe: func(string, int, time.Duration) bool { return false }, Dial: func(tg snmpx.Target) (snmpx.Session, error) {
-		a, ok := e.agents[tg.Address]
-		if !ok {
+		a := e.agent(tg.Address)
+		if a == nil {
 			return nil, errors.New("request timeout (after 1 retries)") // nothing at this address
 		}
 		if tg.Cred.Community != "public" {
@@ -141,7 +155,7 @@ func (e *env) waitPoll(id int64, after time.Time) *engine.Snapshot {
 
 func TestEndToEnd(t *testing.T) {
 	e := setup(t)
-	e.agents["10.0.0.1"] = snmptest.Switch(12)
+	e.setAgent("10.0.0.1", snmptest.Switch(12))
 
 	// The UI requires login.
 	if code, body := e.get("/"); code != 200 || !strings.Contains(body, `name="password"`) {
@@ -219,10 +233,10 @@ func TestEndToEnd(t *testing.T) {
 		t.Error("unselected objects must not be exported")
 	}
 	// Scrapes read the cache only: no SNMP traffic.
-	e.agents["10.0.0.1"].Counts()
+	e.agent("10.0.0.1").Counts()
 	e.get("/probe?target=core-nx-01")
 	e.get("/metrics/all")
-	if g, w, _ := e.agents["10.0.0.1"].Counts(); g+w != 0 {
+	if g, w, _ := e.agent("10.0.0.1").Counts(); g+w != 0 {
 		t.Errorf("scrape caused %d SNMP requests", g+w)
 	}
 
@@ -251,7 +265,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// Refresh picks up a new port, keeps the old selection.
-	snmptest.AddPort(e.agents["10.0.0.1"], 40, "Ethernet1/40", 6, true)
+	snmptest.AddPort(e.agent("10.0.0.1"), 40, "Ethernet1/40", 6, true)
 	e.post("/devices/1/refresh", nil)
 	e.waitDiscovery(1)
 	_, card = e.get("/devices/1")
@@ -274,7 +288,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// CSV import.
-	e.agents["10.0.0.2"] = snmptest.Switch(2)
+	e.setAgent("10.0.0.2", snmptest.Switch(2))
 	_, body := e.post("/import", url.Values{"csv": {"name,address,group,version,community\nacc-1,10.0.0.2,DC1,2c,public\nbad,,DC1,2c,public\n"}})
 	if !strings.Contains(body, "Added: 1 of 2") {
 		t.Fatalf("import: %s", flash(body))
@@ -340,7 +354,7 @@ func flash(body string) string {
 
 func TestChangeLogAndScheduledRefreshSettings(t *testing.T) {
 	e := setup(t)
-	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.setAgent("10.0.0.1", snmptest.Switch(4))
 	e.post("/login", url.Values{"user": {"admin"}, "password": {"wrong"}})
 	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
 
@@ -413,7 +427,7 @@ var tokenRe = regexp.MustCompile(`zx_[A-Za-z0-9_-]+`)
 
 func TestUsersRolesAndAPI(t *testing.T) {
 	e := setup(t)
-	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.setAgent("10.0.0.1", snmptest.Switch(4))
 	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
 
 	// The only admin cannot be demoted.
@@ -521,7 +535,7 @@ func TestCustomOIDs(t *testing.T) {
 	a := snmptest.Switch(2)
 	a.Set("1.3.6.1.4.1.99999.1.1.2.7", "pool-a")
 	a.Set("1.3.6.1.4.1.99999.1.1.3.7", 42)
-	e.agents["10.0.0.1"] = a
+	e.setAgent("10.0.0.1", a)
 	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
 	e.post("/devices/new", url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
 		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}})
@@ -597,7 +611,7 @@ func (e *env) waitJob(path, doneMarker string) string {
 
 func TestDiagnosticsCheckAndScan(t *testing.T) {
 	e := setup(t)
-	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.setAgent("10.0.0.1", snmptest.Switch(4))
 	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
 	devForm := url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
 		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}}
@@ -641,8 +655,8 @@ func TestDiagnosticsCheckAndScan(t *testing.T) {
 	}
 
 	// Subnet scan of 10.0.0.0/29 finds the existing switch and a new one.
-	e.agents["10.0.0.5"] = snmptest.Switch(2)
-	e.agents["10.0.0.5"].Set("1.3.6.1.2.1.1.5.0", "acc-sw-05.example.net")
+	e.setAgent("10.0.0.5", snmptest.Switch(2))
+	e.agent("10.0.0.5").Set("1.3.6.1.2.1.1.5.0", "acc-sw-05.example.net")
 	scanPath, _ := e.postFollow("/scan", url.Values{"subnet": {"10.0.0.0/29"}, "cred": {fmt.Sprint(mustDevice(t, e.st, 1).CredentialID)}, "group": {"HQ2"}})
 	if !strings.HasPrefix(scanPath, "/scan/") {
 		t.Fatalf("scan went to %s", scanPath)
@@ -683,7 +697,7 @@ func (e *env) postFollow(path string, form url.Values) (string, string) {
 
 func TestPortRolesRulesAndFastPolling(t *testing.T) {
 	e := setup(t)
-	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.setAgent("10.0.0.1", snmptest.Switch(4))
 	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
 	e.post("/devices/new", url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
 		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}})
@@ -777,7 +791,7 @@ func TestPortRolesRulesAndFastPolling(t *testing.T) {
 
 func TestConfigExportImportAndBackup(t *testing.T) {
 	a := setup(t)
-	a.agents["10.0.0.1"] = snmptest.Switch(4)
+	a.setAgent("10.0.0.1", snmptest.Switch(4))
 	a.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
 	a.post("/profiles", url.Values{"name": {"Edge"}, "interval_sec": {"30"}, "timeout_sec": {"3"}, "retries": {"1"}})
 	a.post("/rules", url.Values{"field": {"name"}, "pattern": {"^Vlan"}, "action": {"skip"}})
@@ -809,7 +823,7 @@ func TestConfigExportImportAndBackup(t *testing.T) {
 
 	// A second, empty server: without secrets the preview warns, with them it imports.
 	b := setup(t)
-	b.agents["10.0.0.1"] = snmptest.Switch(4)
+	b.setAgent("10.0.0.1", snmptest.Switch(4))
 	b.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
 	if _, page := b.post("/config/import", url.Values{"yaml": {plain}, "action": {"preview"}}); !strings.Contains(page, "Device sw1 (10.0.0.1): new") ||
 		!strings.Contains(page, "have no community") || !strings.Contains(page, `value="apply"`) {
@@ -875,12 +889,12 @@ func TestConfigExportImportAndBackup(t *testing.T) {
 
 func TestNeighborsMakeUplinks(t *testing.T) {
 	e := setup(t)
-	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.setAgent("10.0.0.1", snmptest.Switch(4))
 	sw2 := snmptest.Switch(4)
 	sw2.Set("1.3.6.1.4.1.9.9.23.1.2.1.1.6.2.1", "SW1.lab.local(FOX123)")
 	sw2.Set("1.3.6.1.4.1.9.9.23.1.2.1.1.7.2.1", "Ethernet1/4")
 	sw2.Set("1.0.8802.1.1.2.1.4.1.1.9.0.3.1", "printer-7")
-	e.agents["10.0.0.2"] = sw2
+	e.setAgent("10.0.0.2", sw2)
 	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
 	add := func(addr, name string) {
 		e.post("/devices/new", url.Values{"address": {addr}, "name": {name}, "port": {"161"}, "enabled": {"on"},
@@ -918,7 +932,7 @@ func TestNeighborsMakeUplinks(t *testing.T) {
 	}
 
 	// sw1 learns about sw2 on a port it already knows: one Refresh makes it an uplink.
-	e.agents["10.0.0.1"].Set("1.3.6.1.4.1.9.9.23.1.2.1.1.6.4.1", "sw2")
+	e.agent("10.0.0.1").Set("1.3.6.1.4.1.9.9.23.1.2.1.1.6.4.1", "sw2")
 	e.post("/devices/1/refresh", nil)
 	e.waitDiscovery(1)
 	o := port(1, "Ethernet1/4")
@@ -942,5 +956,61 @@ func TestNeighborsMakeUplinks(t *testing.T) {
 	_, probe := e.get("/probe?target=2&poll=fast")
 	if !strings.Contains(probe, `zirox_if_neighbor_info{ifIndex="2",ifName="Ethernet1/2",neighbor="SW1.lab.local(FOX123)",neighbor_port="Ethernet1/4",protocol="cdp"} 1`) {
 		t.Errorf("probe lacks the neighbour:\n%s", probe)
+	}
+}
+
+func TestLoginHardening(t *testing.T) {
+	e := setup(t)
+	// Every page carries the security headers, and no inline script is left
+	// for the policy to block.
+	r, err := e.c.Get(e.srv.URL + "/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if csp := r.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") ||
+		r.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("headers: %v", r.Header)
+	}
+	if _, page := e.get("/login"); strings.Contains(page, "<script>") || !strings.Contains(page, `src="/static/theme.js"`) {
+		t.Error("login page has an inline script")
+	}
+	if code, js := e.get("/static/theme.js"); code != 200 || !strings.Contains(js, "zirox-theme") {
+		t.Errorf("theme.js: %d", code)
+	}
+
+	// Five wrong passwords block the sixth attempt, even with the right password.
+	for i := 0; i < 5; i++ {
+		if _, page := e.post("/login", url.Values{"user": {"admin"}, "password": {"wrong"}}); !strings.Contains(page, "Wrong username or password") {
+			t.Fatalf("attempt %d not refused", i)
+		}
+	}
+	code, page := e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	if code != http.StatusTooManyRequests || !strings.Contains(page, "Too many failed logins") {
+		t.Fatalf("not blocked: %d", code)
+	}
+}
+
+func TestAPITokenExpiry(t *testing.T) {
+	e := setup(t)
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	_, page := e.post("/tokens", url.Values{"name": {"short"}, "role": {"viewer"}, "expires_days": {"30"}})
+	tok := tokenRe.FindString(page)
+	if code, _ := e.api("GET", "/api/v1/devices", tok, ""); code != 200 {
+		t.Fatalf("fresh token: %d", code)
+	}
+	ts, _ := e.st.APITokens()
+	if len(ts) != 1 || ts[0].Expires.Sub(time.Now()) < 29*24*time.Hour {
+		t.Fatalf("expiry not stored: %+v", ts)
+	}
+	if _, page := e.get("/users"); !strings.Contains(page, ts[0].Expires.Format("2006-01-02")) {
+		t.Error("users page lacks the expiry date")
+	}
+	// Move the expiry into the past.
+	if err := e.st.SetAPITokenExpiry(ts[0].ID, time.Now().Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := e.api("GET", "/api/v1/devices", tok, ""); code != 401 || !strings.Contains(body, "expired") {
+		t.Errorf("expired token: %d %s", code, body)
 	}
 }
