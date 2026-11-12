@@ -94,7 +94,7 @@ ls "$work/data/backups/"*.db >/dev/null 2>&1 || fail "no backup written before t
 if grep -q "panic" "$work/log"; then fail "panic in the log"; fi
 
 # The new version must still refresh and keep the ticks.
-post /devices/1/refresh || fail "refresh"
+post /devices/1/refresh -d "" || fail "refresh"
 sleep 3
 wait_probe 'zirox_poll_success 1'
 stop
