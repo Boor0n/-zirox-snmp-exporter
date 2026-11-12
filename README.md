@@ -258,6 +258,8 @@ Device health: `zirox_cpu_utilization_percent{window}`, `zirox_memory_used_bytes
 
 Firewalls (ASA): `zirox_firewall_connections{type="current"|"max"}`, `zirox_vpn_sessions{type="all"|"l2l"|"anyconnect"}`, `zirox_vpn_users`.
 
+Servers and IOS-XR: Dell iDRAC (IDRAC-MIB) gives `zirox_temperature_celsius`, `zirox_fan_rpm` and `zirox_dell_status{component="system"|"temperature"|"fan"|"psu"|"disk"}` (3 = ok); HPE iLO (CPQHLTH-MIB) gives `zirox_temperature_celsius` and `zirox_hp_condition{component=...}` (2 = ok); Cisco IOS-XR / NCS memory comes from CISCO-ENHANCED-MEMPOOL-MIB as `zirox_memory_used_bytes` / `zirox_memory_free_bytes`. They are found by the normal discovery; nothing to configure.
+
 BGP peers (BGP4-MIB, IPv4): `zirox_bgp_peer_state` (6 = established), `zirox_bgp_peer_admin_status`, `zirox_bgp_peer_established_seconds`, `zirox_bgp_peer_updates_received_total` with the labels `peer`, `remote_as`.
 
 Port descriptions: `zirox_if_info{ifIndex, ifName, ifDescr, ifAlias, role}` = 1, with the live `ifAlias` read at every poll. Join it to traffic for the current description: `rate(ifHCInOctets[5m]) * on(device, ifIndex) group_left(ifAlias) zirox_if_info`.
@@ -318,6 +320,14 @@ If an OID is not among the built-in ones (ports, CPU, memory, sensors, disks, fi
 4. Click **Refresh all devices** or Refresh on a device. Found objects appear in the **Custom** section of the device page with checkboxes, like ports.
 
 A table metric gets the labels `index` and `name`; a single value has no labels. Only numeric values are exported. Deleting an OID removes its objects from all devices. All changes are logged.
+
+## Backup and configuration
+
+**System → Backup and config** (admins):
+
+- **Download backup**: the database and the encryption key as one `.tar.gz` with a `RESTORE.txt`. Restoring it on a new server (stop Zirox, extract into `/var/lib/zirox`, start) moves everything: devices, ticks, credentials, users, change log. If the key is set by `ZIROX_SECRET_KEY`, it is not in the archive; set the same value on the new server.
+- **Export configuration**: settings, credentials (without secrets unless you ask), poll profiles, port rules, custom OIDs and devices with their ticked ports and roles, as YAML you can keep in git.
+- **Import configuration**: upload or paste such a file, press **Preview** to see every change and any problem, then **Import**. Devices match by name or address; ticks and roles are restored on known devices, and new devices get them after their first discovery. Port rules in the file replace the current ones. The database is backed up before the import.
 
 ## Change log
 

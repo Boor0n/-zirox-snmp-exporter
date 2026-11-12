@@ -699,7 +699,18 @@ func (e *Engine) discover(d store.Device) error {
 	if err != nil {
 		return err
 	}
-	return e.st.ApplyDiscovery(d, snmpx.MergeWithRules(old, found, eff.AutoSelectUp, rules, d.Group))
+	presets, err := e.st.Presets(d.ID)
+	if err != nil {
+		return err
+	}
+	if err := e.st.ApplyDiscovery(d, snmpx.MergeWithRules(old, found, eff.AutoSelectUp, rules, d.Group, presets)); err != nil {
+		return err
+	}
+	if len(presets) > 0 {
+		// Presets are used once; later discoveries keep what the user set.
+		return e.st.SetPresets(d.ID, nil)
+	}
+	return nil
 }
 
 // Test checks that a device answers with the given credential.

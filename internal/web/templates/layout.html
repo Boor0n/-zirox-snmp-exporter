@@ -31,6 +31,7 @@
     <a href="/scan" {{if eq .Page "scan"}}class="on" aria-current="page"{{end}}>Find devices</a>{{end}}
     <div class="navsec">System</div>
     <a href="/settings" {{if eq .Page "settings"}}class="on" aria-current="page"{{end}}>Settings</a>
+    {{if .CanEdit}}<a href="/config" {{if eq .Page "config"}}class="on" aria-current="page"{{end}}>Backup and config</a>{{end}}
     <a href="/prometheus" {{if eq .Page "prometheus"}}class="on" aria-current="page"{{end}}>Prometheus</a>
     {{if .CanEdit}}<a href="/users" {{if eq .Page "users"}}class="on" aria-current="page"{{end}}>Users</a>{{end}}
   </nav>

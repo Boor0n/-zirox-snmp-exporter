@@ -27,6 +27,9 @@ var assets embed.FS
 type Config struct {
 	CookieSecure bool
 	Version      string
+	// SecretKey goes into downloaded backups; nil when it comes from
+	// ZIROX_SECRET_KEY (then the backup says to set it on the new server).
+	SecretKey []byte
 }
 
 // Server serves the UI.
@@ -109,6 +112,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 	p("GET /profiles", s.profiles)
 	a("POST /profiles", s.profileSave)
 	a("POST /profiles/{id}/delete", s.profileDelete)
+	a("GET /config", s.configPage)
+	a("GET /config/export.yaml", s.configExport)
+	a("POST /config/import", s.configImport)
+	a("GET /config/backup.tar.gz", s.configBackup)
 	p("GET /settings", s.settings)
 	a("POST /settings", s.settingsSave)
 	p("POST /settings/password", s.passwordSave)
@@ -320,7 +327,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 // pageTitles name each page in the browser tab, so several open tabs can be told apart.
 var pageTitles = map[string]string{
 	"devices": "Devices", "device": "Device", "device_form": "Device", "credentials": "Credentials",
-	"credential_form": "Credentials", "profiles": "Poll profiles", "rules": "Port rules", "settings": "Settings", "import": "Import",
+	"credential_form": "Credentials", "profiles": "Poll profiles", "rules": "Port rules", "config": "Configuration", "settings": "Settings", "import": "Import",
 	"custom_oids": "Custom OIDs", "overview": "Overview", "search": "Search", "diagnose": "Diagnostics", "check": "Access check", "scan": "Find devices", "prometheus": "Prometheus", "audit": "Change log", "users": "Users", "login": "Log in",
 }
 

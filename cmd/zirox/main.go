@@ -65,6 +65,11 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// The key goes into UI backups only when it lives in the data directory.
+	var fileKey []byte
+	if os.Getenv("ZIROX_SECRET_KEY") == "" {
+		fileKey = key
+	}
 	box, err := secret.New(key)
 	if err != nil {
 		return err
@@ -122,7 +127,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	ui, err := web.New(st, en, box, web.Config{CookieSecure: os.Getenv("ZIROX_COOKIE_SECURE") == "1", Version: version}, log)
+	ui, err := web.New(st, en, box, web.Config{CookieSecure: os.Getenv("ZIROX_COOKIE_SECURE") == "1", Version: version, SecretKey: fileKey}, log)
 	if err != nil {
 		return err
 	}

@@ -1,0 +1,41 @@
+{{define "content"}}
+<h1>Backup and configuration</h1>
+
+<div class="grid3">
+<section class="card">
+  <h3>Full backup</h3>
+  <p>The database and the encryption key in one <code>.tar.gz</code>: devices, ticks, credentials, users, change log. Restore it to move Zirox to another server or roll back; the archive has a <code>RESTORE.txt</code> with the commands.</p>
+  {{if .KeyInEnv}}<p class="flash warn">The encryption key comes from <code>ZIROX_SECRET_KEY</code>, so it is not in the archive. Keep that value with the backup.</p>{{else}}<p class="muted small">The archive contains the key that decrypts the stored communities and passwords: keep it as safe as the passwords.</p>{{end}}
+  <a class="btn primary" href="/config/backup.tar.gz">Download backup</a>
+  <p class="muted small">Zirox also keeps the last 5 automatic copies of the database in <code>data/backups/</code>, written before each upgrade and import.</p>
+</section>
+<section class="card">
+  <h3>Configuration file</h3>
+  <p>Settings, credentials, poll profiles, port rules, custom OIDs and devices with their ticked ports and roles, as YAML. Readable, fits in git, and can be imported on another server. Metrics and the change log are not included.</p>
+  <div class="buttons">
+    <a class="btn primary" href="/config/export.yaml">Export without secrets</a>
+    <a class="btn" href="/config/export.yaml?secrets=1" data-confirm="The file will contain every community and v3 password in plain text. Continue?">Export with secrets</a>
+  </div>
+</section>
+</div>
+
+<h2>Import a configuration</h2>
+<p class="muted">Devices are matched by name (or address), everything else by name; port rules in the file replace the current ones. Ticks and roles are restored on devices Zirox already knows; new devices get them after their first discovery. Credentials in the file without a secret are created empty, or left alone when they exist. <b>Preview</b> shows what would change; nothing is saved until you press <b>Import</b>. The database is backed up first.</p>
+{{with .ImportErr}}<div class="flash err" role="alert">{{.}}</div>{{end}}
+{{with .Preview}}
+<div class="card">
+  <h3>Preview: {{len .Lines}} changes</h3>
+  {{if .Errors}}<div class="flash err" role="alert"><b>Fix these first:</b><ul>{{range .Errors}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+  {{if .Warnings}}<div class="flash warn"><ul>{{range .Warnings}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+  <ul class="small">{{range .Lines}}<li>{{.}}</li>{{end}}</ul>
+</div>
+{{end}}
+<form method="post" action="/config/import" enctype="multipart/form-data" class="card form">
+  <label>YAML file <input type="file" name="file" accept=".yaml,.yml,text/yaml"></label>
+  <label>or paste it here<textarea name="yaml" rows="10" spellcheck="false" placeholder="zirox_config: 1&#10;devices:&#10;  - name: core-nx-01&#10;    address: 10.0.0.1&#10;    credential: dc-ro">{{.YAML}}</textarea></label>
+  <div class="buttons">
+    <button name="action" value="preview">Preview</button>
+    {{if .Preview}}{{if not .Preview.Errors}}<button class="primary" name="action" value="apply" data-confirm="Import this configuration?">Import</button>{{end}}{{end}}
+  </div>
+</form>
+{{end}}

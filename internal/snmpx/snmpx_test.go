@@ -493,7 +493,7 @@ func TestMergeWithRules(t *testing.T) {
 		{Field: store.FieldName, Pattern: "^Vlan", Action: store.RulePoll, Role: "core"},
 		{Field: store.FieldName, Pattern: "1/3$", Action: store.RuleSkip},
 	}
-	objs := snmpx.MergeWithRules(nil, first, true, rules, "")
+	objs := snmpx.MergeWithRules(nil, first, true, rules, "", nil)
 	if o := find(objs, snmpx.KindIf, "Vlan10"); !o.Selected || o.Role != "core" {
 		t.Errorf("Vlan10 = %+v", o)
 	}
@@ -511,7 +511,7 @@ func TestMergeWithRules(t *testing.T) {
 	}
 	snmptest.AddPort(a, 20, "Vlan20", 136, true)
 	_, second := discover(t, a)
-	merged := snmpx.MergeWithRules(objs, second, true, rules, "")
+	merged := snmpx.MergeWithRules(objs, second, true, rules, "", nil)
 	if o := find(merged, snmpx.KindIf, "Vlan10"); o.Selected || o.Role != "" {
 		t.Errorf("hand-made Vlan10 overwritten: %+v", o)
 	}
