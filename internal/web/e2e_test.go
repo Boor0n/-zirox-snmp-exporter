@@ -1,6 +1,8 @@
 package web_test
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -770,5 +772,103 @@ func TestPortRolesRulesAndFastPolling(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("change log lacks %q", want)
 		}
+	}
+}
+
+func TestConfigExportImportAndBackup(t *testing.T) {
+	a := setup(t)
+	a.agents["10.0.0.1"] = snmptest.Switch(4)
+	a.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	a.post("/profiles", url.Values{"name": {"Edge"}, "interval_sec": {"30"}, "timeout_sec": {"3"}, "retries": {"1"}})
+	a.post("/rules", url.Values{"field": {"name"}, "pattern": {"^Vlan"}, "action": {"skip"}})
+	a.post("/devices/new", url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"}, "group": {"DC1"},
+		"credential_id": {"new"}, "cred_name": {"dc-ro"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}})
+	a.waitDiscovery(1)
+	// Hand-made state: tick a down port, give Ethernet1/1 a role.
+	objs, _ := a.st.Objects(1)
+	form := url.Values{}
+	for _, o := range objs {
+		if o.Selected || o.Key == "Ethernet1/2" {
+			form.Add("obj", fmt.Sprint(o.ID))
+		}
+		if o.Key == "Ethernet1/1" {
+			form.Set(fmt.Sprintf("role_%d", o.ID), "uplink")
+		}
+	}
+	a.post("/devices/1/selection", form)
+
+	_, plain := a.get("/config/export.yaml")
+	if !strings.Contains(plain, "zirox_config: 1") || !strings.Contains(plain, "if:Ethernet1/2") || !strings.Contains(plain, "if:Ethernet1/1: uplink") ||
+		!strings.Contains(plain, "pattern: ^Vlan") || strings.Contains(plain, "public") {
+		t.Fatalf("export:\n%s", plain)
+	}
+	_, secret := a.get("/config/export.yaml?secrets=1")
+	if !strings.Contains(secret, "community: public") {
+		t.Errorf("export with secrets lacks the community")
+	}
+
+	// A second, empty server: without secrets the preview warns, with them it imports.
+	b := setup(t)
+	b.agents["10.0.0.1"] = snmptest.Switch(4)
+	b.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	if _, page := b.post("/config/import", url.Values{"yaml": {plain}, "action": {"preview"}}); !strings.Contains(page, "Device sw1 (10.0.0.1): new") ||
+		!strings.Contains(page, "have no community") || !strings.Contains(page, `value="apply"`) {
+		t.Fatalf("preview:\n%s", page)
+	}
+	if n, _ := b.st.Devices(); len(n) != 0 {
+		t.Fatal("preview must not save anything")
+	}
+	if _, page := b.post("/config/import", url.Values{"yaml": {"zirox_config: 1\ndevices:\n  - name: x\n    address: 10.9.9.9\n    credential: nope\n"}, "action": {"apply"}}); !strings.Contains(page, "neither on this server nor in the file") {
+		t.Errorf("unknown credential not reported")
+	}
+	if _, page := b.post("/config/import", url.Values{"yaml": {secret}, "action": {"apply"}}); !strings.Contains(page, "Imported:") {
+		t.Fatalf("import: %s", flash(page))
+	}
+	b.waitDiscovery(1)
+	d, err := b.st.Device(1)
+	if err != nil || d.Name != "sw1" || d.Group != "DC1" {
+		t.Fatalf("device = %+v %v", d, err)
+	}
+	objs, _ = b.st.Objects(1)
+	for _, o := range objs {
+		wantSel := o.Key == "Ethernet1/1" || o.Key == "Ethernet1/2" || o.Key == "Ethernet1/3" || o.Kind != "if"
+		if o.Selected != wantSel {
+			t.Errorf("%s selected=%v after import, want %v", o.Key, o.Selected, wantSel)
+		}
+		if (o.Key == "Ethernet1/1") != (o.Role == "uplink") {
+			t.Errorf("%s role=%q", o.Key, o.Role)
+		}
+	}
+	if rs, _ := b.st.PortRules(); len(rs) != 1 || rs[0].Pattern != "^Vlan" {
+		t.Errorf("rules = %+v", rs)
+	}
+	if p, err := b.st.ProfileByName("Edge"); err != nil || p.IntervalSec != 30 {
+		t.Errorf("profile = %+v %v", p, err)
+	}
+	if ps, _ := b.st.Presets(1); len(ps) != 0 {
+		t.Errorf("presets left after discovery: %v", ps)
+	}
+
+	// Full backup: a gzip'ed tar with the database.
+	r, err := b.c.Get(b.srv.URL + "/config/backup.tar.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Body.Close()
+	gz, err := gzip.NewReader(r.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(gz)
+	names := map[string]int64{}
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			break
+		}
+		names[h.Name] = h.Size
+	}
+	if names["zirox.db"] < 1000 || names["RESTORE.txt"] == 0 {
+		t.Errorf("backup contents: %v", names)
 	}
 }

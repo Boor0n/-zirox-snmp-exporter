@@ -34,6 +34,16 @@ var migrations = []string{
 	   action TEXT NOT NULL DEFAULT '',
 	   role TEXT NOT NULL DEFAULT ''
 	 );`,
+	// 5: ticks and roles from an imported configuration, waiting for the
+	// first discovery of the device to find their ports.
+	`CREATE TABLE IF NOT EXISTS object_presets (
+	   device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+	   kind TEXT NOT NULL,
+	   key TEXT NOT NULL,
+	   selected INTEGER NOT NULL DEFAULT 0,
+	   role TEXT NOT NULL DEFAULT '',
+	   PRIMARY KEY(device_id, kind, key)
+	 );`,
 }
 
 // backupsKept is how many automatic database backups stay on disk.

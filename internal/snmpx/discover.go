@@ -105,7 +105,13 @@ func Discover(s Session) (SystemInfo, []store.Object, error) {
 	}
 	objs = append(objs, ifs...)
 	// Health objects are best effort: a device that lacks a MIB returns nothing.
-	objs = append(objs, discoverHealth(s)...)
+	health := discoverHealth(s)
+	objs = append(objs, health...)
+	haveMem := false
+	for _, o := range health {
+		haveMem = haveMem || o.Kind == KindCiscoMem
+	}
+	objs = append(objs, discoverHardware(s, haveMem)...)
 	objs = append(objs, discoverCustom(s)...)
 	return info, uniqueKeys(objs), nil
 }
@@ -308,12 +314,14 @@ func uniqueKeys(objs []store.Object) []store.Object {
 // autoSelect is on; vanished ones are kept as missing so nothing is lost.
 // On the first discovery (no old objects) nothing is marked as new.
 func Merge(old, found []store.Object, autoSelect bool) []store.Object {
-	return MergeWithRules(old, found, autoSelect, nil, "")
+	return MergeWithRules(old, found, autoSelect, nil, "", nil)
 }
 
 // MergeWithRules is Merge where port rules decide the tick and role of ports
-// seen for the first time. Known ports keep their tick and role.
-func MergeWithRules(old, found []store.Object, autoSelect bool, rules store.Rules, group string) []store.Object {
+// seen for the first time. Known ports keep their tick and role. Presets
+// (from an imported configuration) decide before rules for objects seen for
+// the first time.
+func MergeWithRules(old, found []store.Object, autoSelect bool, rules store.Rules, group string, presets map[string]store.Preset) []store.Object {
 	prev := map[string]store.Object{}
 	for _, o := range old {
 		prev[o.Kind+"\x00"+o.Key] = o
@@ -338,6 +346,9 @@ func MergeWithRules(old, found []store.Object, autoSelect bool, rules store.Rule
 			if strings.HasPrefix(o.Kind, "custom_") {
 				// Custom OIDs carry their own auto-select switch.
 				o.Selected = autoSelectCustom(o.Kind)
+			}
+			if p, ok := presets[store.PresetKey(o.Kind, o.Key)]; ok {
+				o.Selected, o.Role = p.Selected, p.Role
 			}
 			o.State = store.StateNew
 			if first {
