@@ -190,3 +190,25 @@ p.hint { margin: 0 0 4px; max-width: none; }
   th[data-sort] button { padding: 7px 6px; }
   .toolbar input[type=search] { min-width: 0; flex: 1 1 100%; }
 }
+
+/* Access ladder, add-device stepper, version */
+.brand .ver { font-weight: 400; font-size: 12px; color: var(--muted); margin-left: 4px; }
+.badge.upd { align-self: center; }
+.mono, code, pre.code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.ladder { list-style: none; margin: 8px 0; padding: 0; }
+.ladder .step { display: flex; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.ladder .step:first-child { border-top: 0; }
+.ladder .mark { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.ladder .s-ok .mark { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+.ladder .s-fail .mark { background: var(--bad-bg); color: var(--bad); border-color: transparent; }
+.ladder .s-warn .mark { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.ladder .s-skip { color: var(--muted); }
+.ladder .snippets { margin-top: 6px; }
+.ladder .snippets pre { margin: 4px 0 8px; overflow-x: auto; }
+.stepper { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 0; margin: 0 0 14px; color: var(--muted); }
+.stepper li { display: flex; align-items: center; gap: 6px; }
+.stepper li span { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+.stepper li.on { color: var(--fg); font-weight: 600; }
+.stepper li.on span { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.stepper li.done span { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+progress { width: 100%; height: 10px; }

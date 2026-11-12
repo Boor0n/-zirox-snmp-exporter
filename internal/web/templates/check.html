@@ -1,0 +1,40 @@
+{{define "content"}}
+<div class="bar">
+  <h1>Access check <span class="muted small">{{.Job.Title}}</span></h1>
+  {{if .Finished}}<a class="btn" href="/checks/{{.Job.ID}}/csv">Export CSV</a>{{end}}
+</div>
+{{if not .Finished}}
+<div data-autoreload="3"></div>
+<div class="card"><p>Checking {{.Done}} of {{.Job.Total}} devices… The page refreshes by itself.</p>
+<progress max="{{.Job.Total}}" value="{{.Done}}"></progress></div>
+{{else}}
+<nav class="stats" aria-label="Summary">
+  <span class="stat st-ok"><span class="dot" aria-hidden="true"></span>Reachable <b>{{.OK}}</b></span>
+  <span class="stat st-failing"><span class="dot" aria-hidden="true"></span>Problems <b>{{.Failed}}</b></span>
+  <span class="stat">Took <b>{{dur .Job.Took}}</b></span>
+</nav>
+{{if .ACL}}
+<div class="card">
+  <h3>For the network team: allow Zirox in the SNMP ACL</h3>
+  {{range $src, $addrs := .ACL}}
+  <p>These devices do not answer SNMP from <code>{{$src}}</code> ({{len $addrs}}). Add <code>{{$src}}</code> to their SNMP ACL and check the community:</p>
+  <pre class="code">{{range $addrs}}{{.}}
+{{end}}</pre>
+  {{end}}
+  <p class="small muted">The CSV export has one line per device with the failed step, for a ticket.</p>
+</div>
+{{end}}
+<div class="table-wrap"><table class="list">
+  <thead><tr><th>Device</th><th>Result</th><th>Details</th></tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr class="{{if not .Diag.OK}}errrow{{end}}">
+    <td><a href="/devices/{{.Device.ID}}"><b>{{.Device.Name}}</b></a><div class="muted small">{{.Device.Address}}{{with .Device.Group}} · {{.}}{{end}}</div></td>
+    <td class="nowrap">{{if .Diag.OK}}<span class="badge ok">OK</span>{{else}}<span class="badge bad">{{.Diag.Failed}}</span>{{end}}</td>
+    <td>{{.Diag.Summary}}{{if not .Diag.OK}} · <a href="/devices/{{.Device.ID}}/diagnose">how to fix</a>{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{end}}
+{{end}}

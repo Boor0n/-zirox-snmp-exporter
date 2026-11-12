@@ -72,6 +72,7 @@ type SystemInfo struct {
 	SysDescr    string
 	SysObjectID string
 	SysName     string
+	Identity
 }
 
 // Discover walks the device once and returns everything that can be polled.
@@ -94,6 +95,8 @@ func Discover(s Session) (SystemInfo, []store.Object, error) {
 	if len(pdus) == 0 {
 		return info, nil, ErrNoData
 	}
+
+	info.Identity = identify(s, info)
 
 	var objs []store.Object
 	ifs, err := discoverInterfaces(s)

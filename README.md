@@ -112,11 +112,13 @@ Log in with the new password, then remove the `ZIROX_RESET_ADMIN_PASSWORD=1` lin
 
 **Devices → Add device**: enter the IP address or DNS name, a name (it becomes the `device` label in Prometheus), an optional group/site, the credentials and a poll profile.
 
-1. Click **Test connection** first. It reads `sysName` and `sysDescr` and shows the device's answer or the error.
-2. Click **Add and discover**. Zirox walks the device once and lists its ports, CPU, memory, sensors, PSUs and fans.
+1. Click **Check access**. Zirox climbs a five-step ladder and stops at the first problem: the name resolves, there is a route (and from which address Zirox sends), the device answers SNMP, the credentials are accepted, the SNMP view shows the interface tables. Each failed step says what to fix and has ready configuration for IOS/IOS-XE, NX-OS, IOS XR and ASA with the Zirox address filled in.
+2. Click **Add and discover**. Zirox walks the device once and lists its ports, CPU, memory, sensors, PSUs and fans, and reads the model, software version and serial number (ENTITY-MIB, or `sysDescr` when the device has none).
 3. On the device page tick what you want polled and save. Up ports and health objects are ticked by default, down ports are not.
 
-Many devices at once: **Import** takes a CSV (see "CSV import" below).
+The same check is on every device page (**Diagnostics**) and for many devices at once: select them in the list and click **Check access**. The result lists which devices answer, which do not and why, the addresses to add to the SNMP ACL, and exports a CSV for the network team.
+
+Many devices at once: **Import** takes a CSV (see "CSV import" below), and **Find devices** scans a subnet (up to a /20) with the credentials you choose, lists what answered with its name and model, and adds the ones you tick.
 
 ### 6. Connect Prometheus
 
@@ -190,6 +192,8 @@ A release is built automatically when a tag is pushed (`git tag v0.2.0 && git pu
 | `ZIROX_TLS_CERT`, `ZIROX_TLS_KEY` | — | Serve HTTPS directly from the exporter |
 | `ZIROX_MAX_POLLS` | `128` | Concurrent polls |
 | `ZIROX_MAX_DISCOVERY` | `32` | Concurrent full walks |
+| `ZIROX_UPDATE_CHECK` | on | `0` = do not check GitHub for a newer release (the UI shows "vX.Y.Z available" when there is one) |
+| `HTTPS_PROXY` | — | Proxy for the release check; the installer copies it from `https_proxy` |
 
 **Back up `data/secret.key`** together with the database: without the key the stored communities and passwords cannot be decrypted.
 
@@ -242,7 +246,7 @@ BGP peers (BGP4-MIB, IPv4): `zirox_bgp_peer_state` (6 = established), `zirox_bgp
 
 Port descriptions: `zirox_if_info{ifIndex, ifName, ifDescr, ifAlias}` = 1, with the live `ifAlias` read at every poll. Join it to traffic for the current description: `rate(ifHCInOctets[5m]) * on(device, ifIndex) group_left(ifAlias) zirox_if_info`.
 
-Internal: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_poll_partial`, `zirox_poll_requests_failed`, `zirox_ports_index_shifted`, `zirox_device_uptime_seconds`, `zirox_device_last_restart_timestamp_seconds`, `zirox_device_info`.
+Internal: `zirox_poll_success`, `zirox_poll_duration_seconds`, `zirox_poll_last_success_timestamp_seconds`, `zirox_poll_interval_seconds`, `zirox_poll_samples`, `zirox_poll_partial`, `zirox_poll_requests_failed`, `zirox_ports_index_shifted`, `zirox_device_uptime_seconds`, `zirox_device_last_restart_timestamp_seconds`, `zirox_device_info` (labels `sysName`, `sysDescr`, `sysObjectID`, `model`, `version`, `serial`).
 
 Example queries:
 
@@ -285,6 +289,8 @@ name,address,group,profile,credential
 core-nx-01,10.0.0.1,DC1,Fast (6 s),Nexus RO v3
 acc-sw-12,10.0.1.12,DC1,,
 ```
+
+After the import, **Check access of the new devices** runs the access check for all of them.
 
 ## Custom OIDs
 

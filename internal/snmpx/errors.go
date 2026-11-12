@@ -138,8 +138,11 @@ func CommunityWarning(c string) string {
 }
 
 // SourceAddress is the local address the server uses to reach address, as
-// device ACLs must allow it. No packet is sent. Returns "" when unknown.
-func SourceAddress(address string) string {
+// device ACLs must allow it. No packet is sent. Returns "" when there is no
+// route. Tests may replace it.
+var SourceAddress = sourceAddress
+
+func sourceAddress(address string) string {
 	c, err := net.Dial("udp", net.JoinHostPort(address, "161"))
 	if err != nil {
 		return ""

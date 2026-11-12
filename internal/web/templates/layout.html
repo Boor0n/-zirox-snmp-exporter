@@ -11,12 +11,13 @@
 <a class="skip" href="#main">Skip to content</a>
 {{if .User}}
 <header class="top">
-  <a class="brand" href="/">Zirox SNMP</a>
+  <a class="brand" href="/">Zirox SNMP <span class="ver">{{.Version}}</span></a>{{with .UpdateTag}}<a class="badge new upd" href="{{$.UpdateURL}}" target="_blank" rel="noopener" title="A newer Zirox is available; rerun the install command to upgrade">{{.}} available</a>{{end}}
   <nav aria-label="Main">
     <a href="/" {{if or (eq .Page "devices") (eq .Page "device") (eq .Page "device_form")}}class="on" aria-current="page"{{end}}>Devices</a>
     <a href="/credentials" {{if or (eq .Page "credentials") (eq .Page "credential_form")}}class="on" aria-current="page"{{end}}>Credentials</a>
     <a href="/profiles" {{if eq .Page "profiles"}}class="on" aria-current="page"{{end}}>Poll profiles</a>
-    {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on" aria-current="page"{{end}}>Import</a>{{end}}
+    {{if .CanEdit}}<a href="/import" {{if eq .Page "import"}}class="on" aria-current="page"{{end}}>Import</a>
+    <a href="/scan" {{if eq .Page "scan"}}class="on" aria-current="page"{{end}}>Find devices</a>{{end}}
     <a href="/custom-oids" {{if eq .Page "custom_oids"}}class="on" aria-current="page"{{end}}>Custom OIDs</a>
     <a href="/settings" {{if eq .Page "settings"}}class="on" aria-current="page"{{end}}>Settings</a>
     <a href="/prometheus" {{if eq .Page "prometheus"}}class="on" aria-current="page"{{end}}>Prometheus</a>
@@ -32,6 +33,6 @@
 {{with .FlashWarn}}<div class="flash warn" role="status">{{.}}</div>{{end}}
 {{template "content" .}}
 </main>
-<footer>Zirox SNMP Exporter {{.Version}}</footer>
+<footer>Zirox SNMP Exporter {{.Version}}{{with .UpdateTag}} · <a href="{{$.UpdateURL}}" target="_blank" rel="noopener" class="badge new">{{.}} available</a> <span class="muted small">rerun the install command to upgrade</span>{{end}}</footer>
 </body>
 </html>{{end}}

@@ -79,14 +79,18 @@ type Options struct {
 	AutoRefreshCheck time.Duration
 	// Now replaces time.Now for the scheduled refresh (used by tests).
 	Now func() time.Time
+	// Probe checks whether anything answers SNMP at an address, whatever the
+	// credentials (default snmpx.ProbeV3).
+	Probe snmpx.Prober
 }
 
 // Engine runs one poll loop per enabled device.
 type Engine struct {
-	st   *store.Store
-	box  *secret.Box
-	dial snmpx.Dialer
-	log  *slog.Logger
+	st    *store.Store
+	box   *secret.Box
+	dial  snmpx.Dialer
+	probe snmpx.Prober
+	log   *slog.Logger
 
 	noJitter bool
 	arCheck  time.Duration
@@ -129,8 +133,11 @@ func New(st *store.Store, box *secret.Box, o Options) *Engine {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
+	if o.Probe == nil {
+		o.Probe = snmpx.ProbeV3
+	}
 	return &Engine{
-		st: st, box: box, dial: o.Dial, log: o.Log, noJitter: o.NoJitter,
+		st: st, box: box, dial: o.Dial, probe: o.Probe, log: o.Log, noJitter: o.NoJitter,
 		arCheck: o.AutoRefreshCheck, now: o.Now,
 		autoTried: map[int64]time.Time{},
 		autoFixed: map[int64]time.Time{},
@@ -596,6 +603,7 @@ func (e *Engine) discover(d store.Device) error {
 		return err
 	}
 	d.SysName, d.SysDescr, d.SysObjectID = info.SysName, info.SysDescr, info.SysObjectID
+	d.Model, d.SWVersion, d.Serial = info.Model, info.Version, info.Serial
 	return e.st.ApplyDiscovery(d, snmpx.Merge(old, found, eff.AutoSelectUp))
 }
 
@@ -606,7 +614,7 @@ func (e *Engine) Test(t snmpx.Target) (snmpx.SystemInfo, error) {
 		return snmpx.SystemInfo{}, err
 	}
 	defer s.Close()
-	pdus, err := s.Get([]string{"1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.5.0"})
+	pdus, err := s.Get([]string{"1.3.6.1.2.1.1.1.0", "1.3.6.1.2.1.1.2.0", "1.3.6.1.2.1.1.5.0"})
 	if err != nil {
 		return snmpx.SystemInfo{}, err
 	}
@@ -616,9 +624,12 @@ func (e *Engine) Test(t snmpx.Target) (snmpx.SystemInfo, error) {
 		if b, ok := p.Value.([]byte); ok {
 			v = string(b)
 		}
-		if p.Name == ".1.3.6.1.2.1.1.1.0" || p.Name == "1.3.6.1.2.1.1.1.0" {
+		switch strings.TrimPrefix(p.Name, ".") {
+		case "1.3.6.1.2.1.1.1.0":
 			info.SysDescr = v
-		} else {
+		case "1.3.6.1.2.1.1.2.0":
+			info.SysObjectID = strings.TrimPrefix(v, ".")
+		default:
 			info.SysName = v
 		}
 	}
@@ -642,4 +653,31 @@ func (e *Engine) Lookup(d store.Device, oid string, walk bool) ([]snmpx.LookupRo
 	}
 	defer s.Close()
 	return snmpx.Lookup(s, oid, walk)
+}
+
+// DiagnoseTarget runs the access ladder against a target. Short timeouts keep
+// a check of an unreachable device to a few seconds.
+func (e *Engine) DiagnoseTarget(t snmpx.Target) snmpx.Diagnosis {
+	t.Timeout = min(max(t.Timeout, 2*time.Second), 5*time.Second)
+	t.Retries = min(t.Retries, 1)
+	return snmpx.Diagnose(t, e.dial, e.probe)
+}
+
+// Diagnose runs the access ladder for a saved device.
+func (e *Engine) Diagnose(d store.Device) snmpx.Diagnosis {
+	t, err := e.Target(d, e.Resolve(d))
+	if err != nil {
+		return snmpx.Diagnosis{Address: d.Address, Failed: "Credentials", Problem: snmpx.ProblemConfig,
+			Steps: []snmpx.Step{{Name: "Credentials", Status: snmpx.StepFail, Detail: err.Error()}}}
+	}
+	return e.DiagnoseTarget(t)
+}
+
+// Identify asks a target for its system group only: used by the subnet scan.
+func (e *Engine) Identify(t snmpx.Target) (snmpx.SystemInfo, error) {
+	info, err := e.Test(t)
+	if err == nil {
+		info.Identity = snmpx.IdentifyFromSystem(info.SysDescr, info.SysObjectID)
+	}
+	return info, err
 }

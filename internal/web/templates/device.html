@@ -10,15 +10,17 @@
     <form method="post" action="/devices/{{$d.ID}}/refresh"><button class="primary" {{if .Discovering}}disabled{{end}} title="Walk the whole device again to find new ports and sensors">{{if .Discovering}}Discovering…{{else}}Refresh{{end}}</button></form>
     <a class="btn" href="/devices/{{$d.ID}}/edit">Edit</a>
   </div>{{end}}
+  <div class="buttons"><a class="btn" href="/devices/{{$d.ID}}/diagnose" title="Check name, route, SNMP answer, credentials and view step by step">Diagnostics</a></div>
 </div>
 
 <div class="grid3">
   <div class="card">
     <h3>System</h3>
     <div><b>{{if $d.SysName}}{{$d.SysName}}{{else}}—{{end}}</b></div>
+    {{if or $d.Model $d.SWVersion}}<div>{{$d.Model}}{{with $d.SWVersion}} · <span class="mono">{{.}}</span>{{end}}{{with $d.Serial}} <span class="muted small">S/N {{.}}</span>{{end}}</div>{{end}}
     <div class="muted small pre">{{$d.SysDescr}}</div>
     <div class="small">Last full discovery: {{ago $d.LastDiscovery}}</div>
-    {{with $d.DiscoveryError}}<div class="flash err small">Discovery error: {{.}}</div>{{end}}
+    {{with $d.DiscoveryError}}<div class="flash err small">Discovery error: {{.}} <a href="/devices/{{$d.ID}}/diagnose">Run diagnostics</a></div>{{end}}
   </div>
   <div class="card">
     <h3>Counter polling</h3>
@@ -48,6 +50,7 @@
   Check the boxes and press Apply.</div>
 {{end}}
 
+{{if .Wizard}}{{template "stepper" 3}}{{end}}
 {{if .Groups}}
 {{if .CanEdit}}<p class="muted small hint">Tick what Zirox should poll and press <b>Apply</b>. Click a row to tick it; Shift+click ticks a range.</p>{{end}}
 <form method="post" action="/devices/{{$d.ID}}/selection" id="sel">

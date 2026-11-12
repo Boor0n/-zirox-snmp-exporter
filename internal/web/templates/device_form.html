@@ -1,8 +1,14 @@
 {{define "content"}}
 {{$d := .Device}}
 <h1>{{if $d.ID}}Edit {{$d.Name}}{{else}}New device{{end}}</h1>
+{{if not $d.ID}}{{template "stepper" (or .Step 1)}}{{end}}
 {{with .Error}}<div class="flash err" role="alert">{{.}}</div>{{end}}
 {{with .TestOK}}<div class="flash ok" role="status">{{.}}</div>{{end}}
+{{with .Diag}}<div class="card" id="check">
+  {{if .OK}}<div class="flash ok" role="status">Zirox can reach and read this device{{with .Info.SysName}} ({{.}}){{end}}. {{if not $d.ID}}Press <b>Add and discover</b> to choose its ports.{{end}}</div>
+  {{else}}<div class="flash err" role="alert">Stopped at <b>{{.Failed}}</b>. Fix it with the hint below, then check again. You can also add the device now and fix access later.</div>{{end}}
+  {{template "ladder" .}}
+</div>{{end}}
 <form method="post" action="{{if $d.ID}}/devices/{{$d.ID}}/edit{{else}}/devices/new{{end}}" class="card form">
   <input type="hidden" name="id" value="{{$d.ID}}">
   <fieldset>
@@ -44,7 +50,7 @@
 
   <div class="buttons">
     <button class="primary">{{if $d.ID}}Save{{else}}Add and discover{{end}}</button>
-    <button formaction="/devices/test" formnovalidate>Test connection</button>
+    <button formaction="/devices/test" formnovalidate>{{if $d.ID}}Test connection{{else}}Check access{{end}}</button>
     <a href="{{if $d.ID}}/devices/{{$d.ID}}{{else}}/{{end}}">Cancel</a>
   </div>
 </form>

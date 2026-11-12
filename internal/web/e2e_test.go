@@ -55,11 +55,12 @@ func setup(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	e := &env{t: t, st: st, agents: map[string]*snmptest.Agent{}}
+	snmpx.SourceAddress = func(string) string { return "192.0.2.10" }
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	e.en = engine.New(st, box, engine.Options{NoJitter: true, Log: log, Dial: func(tg snmpx.Target) (snmpx.Session, error) {
+	e.en = engine.New(st, box, engine.Options{NoJitter: true, Log: log, Probe: func(string, int, time.Duration) bool { return false }, Dial: func(tg snmpx.Target) (snmpx.Session, error) {
 		a, ok := e.agents[tg.Address]
 		if !ok {
-			return nil, fmt.Errorf("no route to %s", tg.Address)
+			return nil, errors.New("request timeout (after 1 retries)") // nothing at this address
 		}
 		if tg.Cred.Community != "public" {
 			return nil, errors.New("request timeout (after 1 retries)") // devices ignore a wrong community
@@ -152,11 +153,11 @@ func TestEndToEnd(t *testing.T) {
 	// Test connection with a wrong community, then add the device.
 	devForm := url.Values{"address": {"10.0.0.1"}, "name": {"core-nx-01"}, "port": {"161"}, "enabled": {"on"},
 		"credential_id": {"new"}, "version": {"2c"}, "community": {"nope"}, "profile_id": {"0"}}
-	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "No answer from the device") {
+	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "Stopped at <b>SNMP answer</b>") || !strings.Contains(body, "permit host 192.0.2.10") {
 		t.Fatal("test with wrong community should fail")
 	}
 	devForm.Set("community", "public")
-	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "Device answered: core-nx-01") {
+	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "Zirox can reach and read this device (core-nx-01)") {
 		t.Fatalf("test connection failed: %s", flash(body))
 	}
 	if _, body := e.post("/devices/new", devForm); !strings.Contains(body, "core-nx-01") {
@@ -546,4 +547,104 @@ func TestCustomOIDs(t *testing.T) {
 			t.Errorf("change log lacks %q", want)
 		}
 	}
+}
+
+func (e *env) waitJob(path, doneMarker string) string {
+	e.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		_, body := e.get(path)
+		if strings.Contains(body, doneMarker) {
+			return body
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	e.t.Fatalf("%s did not finish", path)
+	return ""
+}
+
+func TestDiagnosticsCheckAndScan(t *testing.T) {
+	e := setup(t)
+	e.agents["10.0.0.1"] = snmptest.Switch(4)
+	e.post("/login", url.Values{"user": {"admin"}, "password": {"password123"}})
+	devForm := url.Values{"address": {"10.0.0.1"}, "name": {"sw1"}, "port": {"161"}, "enabled": {"on"},
+		"credential_id": {"new"}, "version": {"2c"}, "community": {"public"}, "profile_id": {"0"}}
+	e.post("/devices/new", devForm)
+	e.waitDiscovery(1)
+	if d := mustDevice(t, e.st, 1); d.Model != "Cisco Nexus 9000" {
+		t.Errorf("model = %q", d.Model)
+	}
+	// A second device that does not answer.
+	devForm.Set("address", "10.0.0.9")
+	devForm.Set("name", "dead")
+	e.post("/devices/new", devForm)
+	e.waitDiscovery(2)
+
+	if _, body := e.get("/devices/1/diagnose"); !strings.Contains(body, "Zirox can reach and read this device") || !strings.Contains(body, "5 interfaces") {
+		t.Fatalf("diagnostics of a healthy device: %s", flash(body))
+	}
+	if _, body := e.get("/devices/2/diagnose"); !strings.Contains(body, "Stopped at <b>SNMP answer</b>") {
+		t.Fatalf("diagnostics of a dead device: %s", flash(body))
+	}
+
+	// Bulk check: the dead device is listed for the ACL.
+	req, _ := http.NewRequest("POST", e.srv.URL+"/devices/bulk", strings.NewReader("ids=1&ids=2&action=check"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", e.srv.URL)
+	resp, err := e.c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	jobPath := resp.Request.URL.Path
+	if !strings.HasPrefix(jobPath, "/checks/") {
+		t.Fatalf("bulk check went to %s", jobPath)
+	}
+	body := e.waitJob(jobPath, "Export CSV")
+	if !strings.Contains(body, "Reachable <b>1</b>") || !strings.Contains(body, "Problems <b>1</b>") || !strings.Contains(body, "10.0.0.9\n") {
+		t.Errorf("check page: %s", body)
+	}
+	if _, csvBody := e.get(jobPath + "/csv"); !strings.Contains(csvBody, "dead,10.0.0.9,,fail,SNMP answer,timeout,192.0.2.10") {
+		t.Errorf("csv: %s", csvBody)
+	}
+
+	// Subnet scan of 10.0.0.0/29 finds the existing switch and a new one.
+	e.agents["10.0.0.5"] = snmptest.Switch(2)
+	e.agents["10.0.0.5"].Set("1.3.6.1.2.1.1.5.0", "acc-sw-05.example.net")
+	scanPath, _ := e.postFollow("/scan", url.Values{"subnet": {"10.0.0.0/29"}, "cred": {fmt.Sprint(mustDevice(t, e.st, 1).CredentialID)}, "group": {"HQ2"}})
+	if !strings.HasPrefix(scanPath, "/scan/") {
+		t.Fatalf("scan went to %s", scanPath)
+	}
+	body = e.waitJob(scanPath, "Add selected")
+	if !strings.Contains(body, "<b>2</b> addresses answered SNMP (1 not in Zirox yet)") || !strings.Contains(body, "(as sw1)") {
+		t.Fatalf("scan results: %s", body)
+	}
+	e.post(scanPath+"/add", url.Values{"addr": {"10.0.0.5", "10.0.0.1"}, "group": {"HQ2"}})
+	devs, _ := e.st.Devices()
+	var added *store.Device
+	for i := range devs {
+		if devs[i].Address == "10.0.0.5" {
+			added = &devs[i]
+		}
+	}
+	if len(devs) != 3 || added == nil || added.Name != "acc-sw-05" || added.Group != "HQ2" {
+		t.Fatalf("devices after scan: %+v", devs)
+	}
+	if _, body := e.post("/scan", url.Values{"subnet": {"10.0.0.0/16"}, "cred": {"1"}}); !strings.Contains(body, "too large") {
+		t.Errorf("a /16 must be refused: %s", flash(body))
+	}
+}
+
+func (e *env) postFollow(path string, form url.Values) (string, string) {
+	e.t.Helper()
+	req, _ := http.NewRequest("POST", e.srv.URL+path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", e.srv.URL)
+	r, err := e.c.Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer r.Body.Close()
+	b, _ := io.ReadAll(r.Body)
+	return r.Request.URL.Path, string(b)
 }

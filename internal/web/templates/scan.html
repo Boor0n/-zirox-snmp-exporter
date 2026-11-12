@@ -1,0 +1,45 @@
+{{define "content"}}
+<h1>Find devices in a subnet</h1>
+{{if .Job}}
+  {{if not .Finished}}
+  <div data-autoreload="3"></div>
+  <div class="card"><p>Scanning {{.Job.Title}}: {{.Done}} of {{.Job.Total}} addresses… The page refreshes by itself.</p>
+  <progress max="{{.Job.Total}}" value="{{.Done}}"></progress></div>
+  {{else}}
+  <form method="post" action="/scan/{{.Job.ID}}/add" class="card">
+    <p>{{.Job.Title}}: <b>{{len .Found}}</b> addresses answered SNMP ({{.NewCount}} not in Zirox yet), scan took {{dur .Job.Took}}.
+    Addresses that did not answer may still be devices whose ACL does not allow Zirox yet.</p>
+    {{if .Found}}
+    <div class="table-wrap"><table class="list">
+      <thead><tr><th class="w1"><input type="checkbox" data-check-all="addr" aria-label="Select all" checked></th><th>Address</th><th>sysName</th><th>Model</th><th>Version</th><th>Credentials</th></tr></thead>
+      <tbody>
+      {{range .Found}}
+      <tr class="{{if .Existing}}off{{end}}">
+        <td>{{if .Existing}}<span class="muted small">added</span>{{else}}<input type="checkbox" name="addr" value="{{.Address}}" checked aria-label="Add {{.Address}}">{{end}}</td>
+        <td><code>{{.Address}}</code></td>
+        <td>{{.Info.SysName}}{{with .Existing}} <span class="muted small">(as {{.}})</span>{{end}}</td>
+        <td>{{.Info.Model}}</td><td>{{.Info.Version}}</td><td>{{.Credential.Name}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    <label>Group / site for the new devices <input name="group" value="{{.Job.Group}}"></label>
+    <div class="buttons"><button class="primary">Add selected and discover</button> <a href="/scan">New scan</a></div>
+    {{end}}
+  </form>
+  {{end}}
+{{else}}
+<form method="post" action="/scan" class="card form">
+  <p>Zirox asks every address of the subnet for its system name with each set of credentials, one second per try, and lists what answered. Nothing is added until you choose.</p>
+  <label>Subnet <input name="subnet" required placeholder="10.214.16.0/24" spellcheck="false" aria-describedby="subnet-hint"><small class="hint" id="subnet-hint">At most a /20 (4096 addresses) per scan.</small></label>
+  <fieldset><legend>Credentials to try</legend>
+    {{range .Credentials}}<label class="check"><input type="checkbox" name="cred" value="{{.ID}}"> {{.Name}} (v{{.Version}})</label>{{else}}<p class="muted">No credentials yet. <a href="/credentials/new">Add credentials</a> first.</p>{{end}}
+  </fieldset>
+  <label>Group / site <input name="group" placeholder="e.g. HQ2"></label>
+  <label>Poll profile
+    <select name="profile_id"><option value="0">Global settings ({{.Global.IntervalSec}} s)</option>{{range .Profiles}}<option value="{{.ID}}">{{.Name}} — {{.IntervalSec}} s</option>{{end}}</select>
+  </label>
+  <div class="buttons"><button class="primary">Scan</button></div>
+</form>
+{{end}}
+{{end}}

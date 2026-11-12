@@ -126,6 +126,9 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if os.Getenv("ZIROX_UPDATE_CHECK") != "0" {
+		ui.StartUpdateCheck(ctx)
+	}
 	exp := exporter.New(st, en)
 	exp.SDAddress = os.Getenv("ZIROX_SD_ADDRESS")
 	exp.Token = os.Getenv("ZIROX_SCRAPE_TOKEN")

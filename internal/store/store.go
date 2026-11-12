@@ -217,18 +217,23 @@ type PollProfile struct {
 
 // Device is one SNMP agent.
 type Device struct {
-	ID             int64
-	Name           string
-	Address        string
-	Port           int
-	CredentialID   int64
-	ProfileID      int64 // 0 = use global settings
-	IntervalSec    int   // 0 = inherit from profile/global
-	Group          string
-	Enabled        bool
-	SysName        string
-	SysDescr       string
-	SysObjectID    string
+	ID           int64
+	Name         string
+	Address      string
+	Port         int
+	CredentialID int64
+	ProfileID    int64 // 0 = use global settings
+	IntervalSec  int   // 0 = inherit from profile/global
+	Group        string
+	Enabled      bool
+	SysName      string
+	SysDescr     string
+	SysObjectID  string
+	// Model, SWVersion and Serial come from ENTITY-MIB (chassis) or, when
+	// the device lacks it, from sysDescr and sysObjectID.
+	Model          string
+	SWVersion      string
+	Serial         string
 	LastDiscovery  time.Time
 	DiscoveryError string
 	CreatedAt      time.Time
@@ -649,13 +654,13 @@ func (s *Store) EnsureDefaultProfiles() error {
 
 // ---- devices ----
 
-const devCols = `id,name,address,port,credential_id,COALESCE(profile_id,0),interval_sec,group_name,enabled,sys_name,sys_descr,sys_object_id,last_discovery,discovery_error,created_at`
+const devCols = `id,name,address,port,credential_id,COALESCE(profile_id,0),interval_sec,group_name,enabled,sys_name,sys_descr,sys_object_id,last_discovery,discovery_error,created_at,model,sw_version,serial`
 
 func scanDev(sc interface{ Scan(...any) error }) (Device, error) {
 	var d Device
 	var last, created int64
 	err := sc.Scan(&d.ID, &d.Name, &d.Address, &d.Port, &d.CredentialID, &d.ProfileID, &d.IntervalSec, &d.Group, &d.Enabled,
-		&d.SysName, &d.SysDescr, &d.SysObjectID, &last, &d.DiscoveryError, &created)
+		&d.SysName, &d.SysDescr, &d.SysObjectID, &last, &d.DiscoveryError, &created, &d.Model, &d.SWVersion, &d.Serial)
 	if last > 0 {
 		d.LastDiscovery = time.Unix(last, 0)
 	}
@@ -768,8 +773,8 @@ func (s *Store) ApplyDiscovery(d Device, objs []Object) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`UPDATE devices SET sys_name=?,sys_descr=?,sys_object_id=?,last_discovery=?,discovery_error='' WHERE id=?`,
-		d.SysName, d.SysDescr, d.SysObjectID, time.Now().Unix(), d.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE devices SET sys_name=?,sys_descr=?,sys_object_id=?,model=?,sw_version=?,serial=?,last_discovery=?,discovery_error='' WHERE id=?`,
+		d.SysName, d.SysDescr, d.SysObjectID, d.Model, d.SWVersion, d.Serial, time.Now().Unix(), d.ID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM objects WHERE device_id=?`, d.ID); err != nil {

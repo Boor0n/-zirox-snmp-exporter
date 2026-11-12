@@ -7,7 +7,7 @@
   </select>
 </label>
 <div class="v12-fields">
-  <label>Community <input name="community" type="password" autocomplete="off" placeholder="{{if .ID}}•••••• (empty = keep current){{end}}" data-community></label>
+  <label>Community <input name="community" type="password" autocomplete="off" value="{{.Community}}" placeholder="{{if .ID}}•••••• (empty = keep current){{end}}" data-community></label>
   <p class="flash warn small" data-community-warn hidden>The community contains <b>@</b>. Cisco reads <code>name@context</code> as community <code>name</code> with SNMP context <code>context</code>, so polls fail with <i>authorizationError</i>. Use a community without <b>@</b> if you can.</p>
 </div>
 <div class="v3-fields">
@@ -22,11 +22,38 @@
   <label>Auth protocol
     <select name="v3_auth_proto">{{$a := .V3AuthProto}}{{range $p := (list "SHA" "SHA256" "SHA384" "SHA512" "SHA224" "MD5")}}<option {{if eq $p $a}}selected{{end}}>{{$p}}</option>{{end}}</select>
   </label>
-  <label>Auth password <input name="v3_auth_pass" type="password" autocomplete="off" placeholder="{{if .ID}}•••••• (empty = keep current){{end}}"></label>
+  <label>Auth password <input name="v3_auth_pass" type="password" autocomplete="off" value="{{.V3AuthPass}}" placeholder="{{if .ID}}•••••• (empty = keep current){{end}}"></label>
   <label>Privacy protocol
     <select name="v3_priv_proto">{{$pp := .V3PrivProto}}{{range $p := (list "AES" "AES192" "AES256" "AES192C" "AES256C" "DES")}}<option {{if eq $p $pp}}selected{{end}}>{{$p}}</option>{{end}}</select>
   </label>
-  <label>Privacy password <input name="v3_priv_pass" type="password" autocomplete="off" placeholder="{{if .ID}}•••••• (empty = keep current){{end}}"></label>
+  <label>Privacy password <input name="v3_priv_pass" type="password" autocomplete="off" value="{{.V3PrivPass}}" placeholder="{{if .ID}}•••••• (empty = keep current){{end}}"></label>
   <label>Context (optional) <input name="v3_context" value="{{.V3Context}}"></label>
 </div>
+{{end}}
+
+{{define "ladder"}}
+<ol class="ladder" aria-label="Access check">
+  {{range .Steps}}
+  <li class="step s-{{.Status}}">
+    <span class="mark" aria-hidden="true">{{if eq .Status "ok"}}✓{{else if eq .Status "fail"}}✕{{else if eq .Status "warn"}}!{{else}}·{{end}}</span>
+    <div>
+      <b>{{.Name}}</b> <span class="sr-only">{{.Status}}</span>{{with .Detail}} — {{.}}{{end}}
+      {{with .Hint}}<div class="small">{{.}}</div>{{end}}
+      {{if .Snippets}}<details class="snippets"><summary>Configuration to fix it</summary>
+        {{range .Snippets}}<div class="small muted">{{.Platform}}</div><pre class="code">{{.Text}}</pre>{{end}}
+        <p class="small muted">Replace &lt;community&gt; with your community. Zirox never prints stored secrets.</p>
+      </details>{{end}}
+    </div>
+  </li>
+  {{end}}
+</ol>
+{{if .Source}}<p class="small muted">Zirox sends SNMP from <code>{{.Source}}</code>; device ACLs must allow this address.{{if .Took}} Check took {{dur .Took}}.{{end}}</p>{{end}}
+{{end}}
+
+{{define "stepper"}}
+<ol class="stepper" aria-label="Add a device">
+  <li class="{{if eq . 1}}on{{else if gt . 1}}done{{end}}"><span>1</span> Address and access</li>
+  <li class="{{if eq . 2}}on{{else if gt . 2}}done{{end}}"><span>2</span> Check</li>
+  <li class="{{if eq . 3}}on{{end}}"><span>3</span> Choose ports</li>
+</ol>
 {{end}}
