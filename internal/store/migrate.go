@@ -44,6 +44,10 @@ var migrations = []string{
 	   role TEXT NOT NULL DEFAULT '',
 	   PRIMARY KEY(device_id, kind, key)
 	 );`,
+	// 6: CDP/LLDP neighbour of each port, found by discovery.
+	`ALTER TABLE objects ADD COLUMN neighbor TEXT NOT NULL DEFAULT '';
+	 ALTER TABLE objects ADD COLUMN neighbor_port TEXT NOT NULL DEFAULT '';
+	 ALTER TABLE objects ADD COLUMN neighbor_proto TEXT NOT NULL DEFAULT '';`,
 }
 
 // backupsKept is how many automatic database backups stay on disk.

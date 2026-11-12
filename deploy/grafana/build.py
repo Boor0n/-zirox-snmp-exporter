@@ -313,12 +313,14 @@ def port(src):
          "targets": [t(f"ifOperStatus{{{sel}}}", "Link")]},
         {"type": "table", "title": "Port details", "id": 15, "datasource": DS,
          "gridPos": {"h": 5, "w": 24, "x": 0, "y": 31},
-         "description": "Labels Zirox exports for this port: description, role, index.",
+         "description": "Labels Zirox exports for this port: description, role, index, and the CDP/LLDP neighbour.",
          "fieldConfig": {"defaults": {"custom": {"align": "auto", "cellOptions": {"type": "auto"}}}, "overrides": []},
          "options": {"showHeader": True},
-         "targets": [t(f"zirox_if_info{{{sel}}}", instant=True, fmt="table")],
-         "transformations": [{"id": "organize", "options": {
-             "excludeByName": {"Time": True, "Value": True, "__name__": True, "job": True, "instance": True}}}]},
+         "targets": [t(f"zirox_if_info{{{sel}}}", instant=True, fmt="table"),
+                     t(f"zirox_if_neighbor_info{{{sel}}}", ref="B", instant=True, fmt="table")],
+         "transformations": [{"id": "merge", "options": {}}, {"id": "organize", "options": {
+             "excludeByName": {"Time": True, "Value #A": True, "Value #B": True, "__name__": True, "job": True,
+                               "instance": True, "poll": True}}}]},
     ]
     return dashboard(
         src, "zirox-port", "Zirox port",

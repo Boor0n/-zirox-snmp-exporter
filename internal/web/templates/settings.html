@@ -10,6 +10,7 @@
   <h3 class="full">Uplink ports</h3>
   <p class="muted full">Ports with the role <b>uplink</b> (set on the device page or by <a href="/rules">port rules</a>) are polled at this interval in a separate request and get their own Prometheus target, so their graphs show short bursts. It only applies where it is shorter than the device's interval. 0 polls uplinks with the rest of the device. 10 s is a good value: most Cisco platforms refresh interface counters every few seconds, so 5 s mostly adds noise.</p>
   <label>Uplink interval, s <input name="fast_interval_sec" type="number" min="0" value="{{.Settings.FastIntervalSec}}"></label>
+  <label class="check full"><input type="checkbox" name="auto_uplink" {{if .Settings.AutoUplink}}checked{{end}}> Ports whose CDP/LLDP neighbour is another device in Zirox become uplinks (ticked, role uplink) when discovery first sees that neighbour, after your <a href="/rules">port rules</a></label>
   <h3 class="full">Scheduled refresh</h3>
   <p class="muted full">Re-runs the full discovery of every enabled device, so new ports and sensors are picked up without clicking Refresh. At most {{.MaxDiscovery}} devices are walked at a time. 0 turns it off.</p>
   <label>Every, hours <input name="auto_refresh_hours" type="number" min="0" value="{{.Settings.AutoRefreshHours}}"></label>

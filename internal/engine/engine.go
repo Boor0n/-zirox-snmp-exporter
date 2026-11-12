@@ -695,7 +695,7 @@ func (e *Engine) discover(d store.Device) error {
 	}
 	d.SysName, d.SysDescr, d.SysObjectID = info.SysName, info.SysDescr, info.SysObjectID
 	d.Model, d.SWVersion, d.Serial = info.Model, info.Version, info.Serial
-	rules, err := e.st.PortRules()
+	rules, err := e.st.EffectiveRules()
 	if err != nil {
 		return err
 	}

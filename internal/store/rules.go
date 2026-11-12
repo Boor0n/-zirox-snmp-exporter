@@ -40,7 +40,29 @@ const (
 	FieldAny   = "any" // name, description or ifAlias
 	FieldName  = "name"
 	FieldAlias = "alias"
+	// FieldNeighbor matches the CDP/LLDP neighbour name of the port.
+	FieldNeighbor = "neighbor"
+	// FieldKnownNeighbor is the built-in rule of Settings.AutoUplink: the
+	// neighbour is a device in Zirox. It is never stored.
+	FieldKnownNeighbor = "known_neighbor"
 )
+
+// HostKey reduces a device name to what CDP/LLDP and Zirox names have in
+// common: lower case, no domain, no "(serial)" suffix that NX-OS adds to
+// its CDP device ID.
+func HostKey(name string) string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if i := strings.IndexByte(name, '('); i > 0 {
+		name = name[:i]
+	}
+	// Keep IP addresses whole; cut the domain off names.
+	if strings.Trim(name, "0123456789.") != "" {
+		if i := strings.IndexByte(name, '.'); i > 0 {
+			name = name[:i]
+		}
+	}
+	return name
+}
 
 // PortRule ticks or unticks new ports and sets their role, by a regular
 // expression on the port name or description. Rules are checked in order;
@@ -55,7 +77,8 @@ type PortRule struct {
 	Action  string
 	Role    string
 
-	re *regexp.Regexp
+	re    *regexp.Regexp
+	known map[string]bool // FieldKnownNeighbor: HostKey of every device
 }
 
 // Compile checks the pattern; matching is case-insensitive.
@@ -76,10 +99,15 @@ func (r *PortRule) Matches(o Object, group string) bool {
 	if r.Group != "" && !strings.EqualFold(r.Group, group) {
 		return false
 	}
+	if r.Field == FieldKnownNeighbor {
+		return o.Neighbor != "" && r.known[HostKey(o.Neighbor)]
+	}
 	if r.re == nil && r.Compile() != nil {
 		return false
 	}
 	switch r.Field {
+	case FieldNeighbor:
+		return r.re.MatchString(o.Neighbor)
 	case FieldName:
 		return r.re.MatchString(o.Name)
 	case FieldAlias:
@@ -133,6 +161,41 @@ func (s *Store) PortRules() (Rules, error) {
 	return out, rows.Err()
 }
 
+// EffectiveRules is PortRules plus, when Settings.AutoUplink is on, the
+// built-in last rule "neighbour is a device in Zirox: tick, role uplink".
+func (s *Store) EffectiveRules() (Rules, error) {
+	rs, err := s.PortRules()
+	if err != nil || !s.Settings().AutoUplink {
+		return rs, err
+	}
+	devs, err := s.Devices()
+	if err != nil {
+		return nil, err
+	}
+	known := map[string]bool{}
+	for _, d := range devs {
+		for _, n := range []string{d.Name, d.SysName, d.Address} {
+			if k := HostKey(n); k != "" {
+				known[k] = true
+			}
+		}
+	}
+	return append(rs, PortRule{Field: FieldKnownNeighbor, Pattern: "(device in Zirox)", Action: RulePoll, Role: RoleUplink, known: known}), nil
+}
+
+// IsBuiltin reports whether the rule is the automatic uplink rule.
+func (r PortRule) IsBuiltin() bool { return r.Field == FieldKnownNeighbor }
+
+// Builtin returns the automatic uplink rule, or nil when it is off.
+func (rs Rules) Builtin() *PortRule {
+	for i := range rs {
+		if rs[i].IsBuiltin() {
+			return &rs[i]
+		}
+	}
+	return nil
+}
+
 // SavePortRule inserts (ID 0, at the end) or updates a rule.
 func (s *Store) SavePortRule(r *PortRule) error {
 	r.Pattern = strings.TrimSpace(r.Pattern)
@@ -143,7 +206,7 @@ func (s *Store) SavePortRule(r *PortRule) error {
 		return err
 	}
 	switch r.Field {
-	case FieldName, FieldAlias, FieldAny:
+	case FieldName, FieldAlias, FieldAny, FieldNeighbor:
 	default:
 		r.Field = FieldAny
 	}

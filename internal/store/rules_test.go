@@ -112,3 +112,17 @@ func TestPortRules(t *testing.T) {
 		t.Errorf("role not normalised: %q", objs[0].Role)
 	}
 }
+
+func TestHostKey(t *testing.T) {
+	for in, want := range map[string]string{
+		"SW1.lab.local(FOX123)": "sw1",
+		"core-nx-01":            "core-nx-01",
+		" Border-RTR.example ":  "border-rtr",
+		"10.0.0.1":              "10.0.0.1",
+		"":                      "",
+	} {
+		if got := HostKey(in); got != want {
+			t.Errorf("HostKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

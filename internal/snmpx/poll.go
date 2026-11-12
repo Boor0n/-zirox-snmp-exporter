@@ -23,6 +23,9 @@ type Sample struct {
 // does not split the traffic series that keep the discovered one.
 const IfInfoMetric = "zirox_if_info"
 
+// IfNeighborMetric names the CDP/LLDP neighbour of a polled port.
+const IfNeighborMetric = "zirox_if_neighbor_info"
+
 // Checks added to every poll to make sure the values still belong to the
 // objects they are exported as.
 const (
@@ -262,6 +265,14 @@ func PollDevice(s Session, objs []store.Object) (PollResult, error) {
 			Keys: []string{"ifIndex", "ifName", "ifDescr", "ifAlias", "role"}, Values: []string{o.Idx, o.Name, o.Descr, alias, o.Role},
 			Value: 1, Obj: o.ID,
 		})
+		if o.Neighbor != "" {
+			res.Samples = append(res.Samples, Sample{
+				Name: IfNeighborMetric, Help: "CDP/LLDP neighbour of the port, as found by the last discovery; value is always 1.",
+				Keys:   []string{"ifIndex", "ifName", "neighbor", "neighbor_port", "protocol"},
+				Values: []string{o.Idx, o.Name, o.Neighbor, o.NeighborPort, o.NeighborProto},
+				Value:  1, Obj: o.ID,
+			})
+		}
 	}
 	return res, nil
 }
