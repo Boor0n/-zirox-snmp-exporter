@@ -29,6 +29,7 @@
 <main id="main">
 {{with .Flash}}<div class="flash ok" role="status">{{.}}</div>{{end}}
 {{with .FlashErr}}<div class="flash err" role="alert">{{.}}</div>{{end}}
+{{with .FlashWarn}}<div class="flash warn" role="status">{{.}}</div>{{end}}
 {{template "content" .}}
 </main>
 <footer>Zirox SNMP Exporter {{.Version}}</footer>

@@ -15,6 +15,7 @@ import (
 const (
 	oidSysDescr    = "1.3.6.1.2.1.1.1.0"
 	oidSysObjectID = "1.3.6.1.2.1.1.2.0"
+	oidSysUpTime   = "1.3.6.1.2.1.1.3.0"
 	oidSysName     = "1.3.6.1.2.1.1.5.0"
 )
 
@@ -78,7 +79,7 @@ func Discover(s Session) (SystemInfo, []store.Object, error) {
 	var info SystemInfo
 	pdus, err := s.Get([]string{oidSysDescr, oidSysObjectID, oidSysName})
 	if err != nil {
-		return info, nil, fmt.Errorf("device not responding: %w", err)
+		return info, nil, err
 	}
 	for _, p := range pdus {
 		switch trimOID(p.Name) {
@@ -91,7 +92,7 @@ func Discover(s Session) (SystemInfo, []store.Object, error) {
 		}
 	}
 	if len(pdus) == 0 {
-		return info, nil, fmt.Errorf("device returned no sysDescr/sysName")
+		return info, nil, ErrNoData
 	}
 
 	var objs []store.Object

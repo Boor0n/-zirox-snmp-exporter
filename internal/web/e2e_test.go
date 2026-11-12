@@ -3,6 +3,7 @@ package web_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -61,7 +62,7 @@ func setup(t *testing.T) *env {
 			return nil, fmt.Errorf("no route to %s", tg.Address)
 		}
 		if tg.Cred.Community != "public" {
-			return nil, fmt.Errorf("wrong community %q", tg.Cred.Community)
+			return nil, errors.New("request timeout (after 1 retries)") // devices ignore a wrong community
 		}
 		return a.Dial()
 	}})
@@ -151,7 +152,7 @@ func TestEndToEnd(t *testing.T) {
 	// Test connection with a wrong community, then add the device.
 	devForm := url.Values{"address": {"10.0.0.1"}, "name": {"core-nx-01"}, "port": {"161"}, "enabled": {"on"},
 		"credential_id": {"new"}, "version": {"2c"}, "community": {"nope"}, "profile_id": {"0"}}
-	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "No response") {
+	if _, body := e.post("/devices/test", devForm); !strings.Contains(body, "No answer from the device") {
 		t.Fatal("test with wrong community should fail")
 	}
 	devForm.Set("community", "public")

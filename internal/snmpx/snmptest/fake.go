@@ -21,7 +21,12 @@ type Agent struct {
 	Walks   int           // number of walk calls
 	Delay   time.Duration // simulated network round trip per Get or Walk
 	GotOIDs int           // total OIDs requested by GET
+	// FailGet, when set, makes a GET time out if it returns true for its OIDs.
+	FailGet func(oids []string) bool
 }
+
+// TimeTicks is a sysUpTime-like value in hundredths of a second.
+type TimeTicks uint32
 
 // New returns an empty agent speaking SNMP v2c.
 func New() *Agent { return &Agent{vals: map[string]gosnmp.SnmpPDU{}, Ver: "2c"} }
@@ -40,6 +45,8 @@ func (a *Agent) Set(oid string, v any) {
 		p.Type, p.Value = gosnmp.Counter32, x
 	case uint64:
 		p.Type, p.Value = gosnmp.Counter64, x
+	case TimeTicks:
+		p.Type, p.Value = gosnmp.TimeTicks, uint32(x)
 	default:
 		panic("unsupported value type")
 	}
@@ -102,6 +109,9 @@ func (s *Session) Get(oids []string) ([]gosnmp.SnmpPDU, error) {
 	if a.Down {
 		return nil, errors.New("timeout")
 	}
+	if a.FailGet != nil && a.FailGet(oids) {
+		return nil, errors.New("request timeout (after 0 retries)")
+	}
 	a.Gets++
 	a.GotOIDs += len(oids)
 	var out []gosnmp.SnmpPDU
@@ -128,6 +138,7 @@ func Switch(n int) *Agent {
 	a := New()
 	a.Set("1.3.6.1.2.1.1.1.0", "Cisco NX-OS(tm) n9000, Software (n9000-dk9)")
 	a.Set("1.3.6.1.2.1.1.2.0", ".1.3.6.1.4.1.9.12.3.1.3.1812")
+	a.Set("1.3.6.1.2.1.1.3.0", TimeTicks(8640000)) // one day
 	a.Set("1.3.6.1.2.1.1.5.0", "core-nx-01")
 	for i := 1; i <= n; i++ {
 		AddPort(a, i, "Ethernet1/"+itoa(i), 6, i%2 == 1)

@@ -193,6 +193,7 @@ var funcs = template.FuncMap{
 		return fmt.Sprintf("%d ms", d.Milliseconds())
 	},
 	"secs":      func(d time.Duration) int { return int(d.Seconds()) },
+	"uptime":    uptimeText,
 	"list":      func(v ...string) []string { return v },
 	"hasPrefix": strings.HasPrefix,
 	"status":    rowStatus,
@@ -229,6 +230,19 @@ var ifTypeNames = map[int]string{
 
 var physicalTypes = map[int]bool{6: true, 56: true, 62: true, 69: true, 117: true, 161: true}
 
+// uptimeText shows a duration as "12d 4h", "3h 20m" or "5m".
+func uptimeText(d time.Duration) string {
+	d = d.Round(time.Minute)
+	days, h, m := int(d.Hours())/24, int(d.Hours())%24, int(d.Minutes())%60
+	switch {
+	case days > 0:
+		return fmt.Sprintf("%dd %dh", days, h)
+	case h > 0:
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	return fmt.Sprintf("%dm", m)
+}
+
 func speedText(mbps int64) string {
 	switch {
 	case mbps <= 0:
@@ -260,6 +274,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	if m := r.URL.Query().Get("err"); m != "" {
 		data["FlashErr"] = m
 	}
+	if m := r.URL.Query().Get("warn"); m != "" {
+		data["FlashWarn"] = m
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, "layout", data); err != nil {
 		s.log.Error("render", "page", page, "err", err)
@@ -278,6 +295,14 @@ func redirect(w http.ResponseWriter, r *http.Request, path, msg string) {
 		path += sep(path) + "msg=" + url.QueryEscape(msg)
 	}
 	http.Redirect(w, r, path, http.StatusSeeOther)
+}
+
+// redirectWarn redirects with a success message and, when warn is set, a warning.
+func redirectWarn(w http.ResponseWriter, r *http.Request, path, msg, warn string) {
+	if warn != "" {
+		path += sep(path) + "warn=" + url.QueryEscape(warn)
+	}
+	redirect(w, r, path, msg)
 }
 
 func redirectErr(w http.ResponseWriter, r *http.Request, path string, err error) {
@@ -603,13 +628,14 @@ func (s *Server) deviceSave(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "device changed", d.Name, s.deviceChanges(before, d))
 	}
 	// A new device, or one whose address or credentials changed, gets a full discovery.
+	warn := communityWarning(c, s.en)
 	if isNew || before.Address != d.Address || before.Port != d.Port || before.CredentialID != d.CredentialID || before.LastDiscovery.IsZero() {
 		s.en.Refresh(d.ID)
-		redirect(w, r, fmt.Sprintf("/devices/%d", d.ID), "Device saved, full discovery running")
+		redirectWarn(w, r, fmt.Sprintf("/devices/%d", d.ID), "Device saved, full discovery running", warn)
 		return
 	}
 	s.en.Reload(d.ID)
-	redirect(w, r, fmt.Sprintf("/devices/%d", d.ID), "Device saved")
+	redirectWarn(w, r, fmt.Sprintf("/devices/%d", d.ID), "Device saved", warn)
 }
 
 func (s *Server) deviceTest(w http.ResponseWriter, r *http.Request) {
@@ -622,7 +648,7 @@ func (s *Server) deviceTest(w http.ResponseWriter, r *http.Request) {
 	eff := s.en.Resolve(d)
 	info, err := s.en.Test(snmpx.Target{Address: d.Address, Port: d.Port, Cred: c, Timeout: max(eff.Timeout, 3*time.Second), Retries: 1})
 	if err != nil {
-		s.rerenderDeviceForm(w, r, d, "No response: "+err.Error(), false)
+		s.rerenderDeviceForm(w, r, d, snmpx.Explain(err, c.Version, snmpx.SourceAddress(d.Address)).Error(), false)
 		return
 	}
 	s.rerenderDeviceForm(w, r, d, fmt.Sprintf("Device answered: %s — %s", info.SysName, firstLine(info.SysDescr)), true)
@@ -639,6 +665,18 @@ func (s *Server) resolveCredentialNoSave(r *http.Request) (store.Credential, err
 		return c, errors.New("choose credentials")
 	}
 	return s.en.DecryptCredential(c)
+}
+
+// communityWarning checks the plain community of c (encrypted ones are
+// decrypted first) for characters devices misread.
+func communityWarning(c store.Credential, en *engine.Engine) string {
+	if c.Version == "3" {
+		return ""
+	}
+	if plain, err := en.DecryptCredential(c); err == nil {
+		c = plain
+	}
+	return snmpx.CommunityWarning(c.Community)
 }
 
 func firstLine(s string) string {
@@ -927,7 +965,7 @@ func (s *Server) credentialSave(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "credentials changed", c.Name, "SNMP v"+c.Version)
 	}
 	_ = s.en.ReloadAll()
-	redirect(w, r, "/credentials", "Credentials saved")
+	redirectWarn(w, r, "/credentials", "Credentials saved", communityWarning(c, s.en))
 }
 
 func (s *Server) credentialDelete(w http.ResponseWriter, r *http.Request) {

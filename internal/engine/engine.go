@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,9 +28,33 @@ type Snapshot struct {
 	Duration time.Duration
 	OK       bool
 	Err      string
+	// Problem is the class of Err (snmpx.Problem*), Hint what to check.
+	Problem  string
+	Hint     string
 	Fails    int
 	Interval time.Duration
+
+	// Uptime is the device's sysUpTime at the poll; LastReboot the time the
+	// device last restarted as seen by Zirox (zero when not seen).
+	Uptime     time.Duration
+	HasUptime  bool
+	LastReboot time.Time
+	// Partial is set when some GET requests were lost; Requests/Failed count them.
+	Partial  bool
+	Requests int
+	Failed   int
+	// Shifted lists ports whose ifIndex moved; their values are withheld
+	// until the automatic Refresh maps them again.
+	Shifted []string
 }
+
+// autoFixPause is the shortest time between two automatic refreshes of one
+// device triggered by a reboot or an ifIndex shift.
+const autoFixPause = 15 * time.Minute
+
+// uptimeWrap is where 32-bit sysUpTime (hundredths of a second) wraps, after
+// about 497 days. A drop close to it is a wrap, not a reboot.
+const uptimeWrap = time.Duration(1<<32) * 10 * time.Millisecond
 
 // Effective is a device's resolved poll configuration.
 type Effective struct {
@@ -77,6 +102,7 @@ type Engine struct {
 	locks     map[int64]*sync.Mutex
 	running   map[int64]bool // discovery in progress
 	autoTried map[int64]time.Time
+	autoFixed map[int64]time.Time // last reboot/shift triggered refresh
 	wg        sync.WaitGroup
 	discCount int
 }
@@ -107,6 +133,7 @@ func New(st *store.Store, box *secret.Box, o Options) *Engine {
 		st: st, box: box, dial: o.Dial, log: o.Log, noJitter: o.NoJitter,
 		arCheck: o.AutoRefreshCheck, now: o.Now,
 		autoTried: map[int64]time.Time{},
+		autoFixed: map[int64]time.Time{},
 		pollSem:   make(chan struct{}, o.MaxConcurrentPolls),
 		discSem:   make(chan struct{}, o.MaxConcurrentDiscovery),
 		loops:     map[int64]context.CancelFunc{},
@@ -345,20 +372,27 @@ func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
 			return
 		case <-time.After(wait):
 		}
-		var samples []snmpx.Sample
+		var res snmpx.PollResult
 		start := time.Now()
 		err := terr
 		if err == nil {
-			samples, err = e.pollOnce(ctx, id, target, objs)
+			res, err = e.pollOnce(ctx, id, target, objs)
 		}
 		if ctx.Err() != nil {
 			return
 		}
 		snap := &Snapshot{At: start, Duration: time.Since(start), Interval: eff.Interval}
 		prev := e.Snapshot(id)
+		if prev != nil {
+			snap.LastReboot = prev.LastReboot
+		}
 		if err != nil {
 			fails++
-			snap.Err = err.Error()
+			ex := snmpx.Explain(err, target.Cred.Version, snmpx.SourceAddress(d.Address))
+			snap.Err, snap.Problem, snap.Hint = ex.Summary, ex.Problem, ex.Hint
+			if ex.Raw != "" {
+				snap.Err += " (" + ex.Raw + ")"
+			}
 			snap.Fails = fails
 			if prev != nil {
 				snap.LastOK = prev.LastOK
@@ -368,7 +402,27 @@ func (e *Engine) loop(ctx context.Context, id int64, immediate bool) {
 			fails = 0
 			snap.OK = true
 			snap.LastOK = start
-			snap.Samples = samples
+			snap.Samples = res.Samples
+			snap.Requests, snap.Failed = res.Requests, res.Failed
+			snap.Uptime, snap.HasUptime = res.Uptime, res.HasUptime
+			snap.Shifted = res.Shifted
+			if res.Partial() {
+				snap.Partial = true
+				ex := snmpx.Explain(res.Err, target.Cred.Version, "")
+				snap.Err = fmt.Sprintf("%d of %d requests got no answer: %s", res.Failed, res.Requests, ex.Summary)
+				snap.Problem, snap.Hint = snmpx.ProblemPartial, "Packet loss to the device or an overloaded agent; values of the affected objects are repeated from the previous poll once"
+				// Repeat the lost objects' previous values once, so one lost
+				// UDP packet does not leave a hole in every graph.
+				if prev != nil && prev.OK && !prev.Partial {
+					for _, sm := range prev.Samples {
+						if res.LostObjects[sm.Obj] {
+							snap.Samples = append(snap.Samples, sm)
+						}
+					}
+				}
+				e.log.Warn("partial poll", "device", d.Name, "failed", res.Failed, "requests", res.Requests, "err", res.Err)
+			}
+			e.checkConsistency(d, prev, snap)
 		}
 		e.mu.Lock()
 		e.snaps[id] = snap
@@ -385,11 +439,53 @@ func backoff(interval time.Duration, fails int) time.Duration {
 	return max(min(d, maxBackoff), interval)
 }
 
-func (e *Engine) pollOnce(ctx context.Context, id int64, t snmpx.Target, objs []store.Object) ([]snmpx.Sample, error) {
+// checkConsistency notices reboots and ifIndex shifts and starts a Refresh
+// for them, at most once per autoFixPause per device.
+func (e *Engine) checkConsistency(d store.Device, prev, snap *Snapshot) {
+	rebooted := false
+	if snap.HasUptime && prev != nil && prev.HasUptime && snap.Uptime < prev.Uptime && prev.Uptime < uptimeWrap-time.Hour {
+		rebooted = true
+		snap.LastReboot = snap.At.Add(-snap.Uptime)
+		e.log.Warn("device restarted", "device", d.Name, "uptime", snap.Uptime.Round(time.Second))
+		_ = e.st.AddAudit("system", "device restarted", d.Name, "uptime "+snap.Uptime.Round(time.Second).String())
+	}
+	if !rebooted && len(snap.Shifted) == 0 {
+		return
+	}
+	now := e.now()
+	e.mu.Lock()
+	last := e.autoFixed[d.ID]
+	due := last.IsZero() || now.Sub(last) >= autoFixPause
+	if due {
+		e.autoFixed[d.ID] = now
+	}
+	e.mu.Unlock()
+	if !due {
+		return
+	}
+	reason := "device restarted"
+	if len(snap.Shifted) > 0 {
+		reason = "port numbering changed: " + shortNames(snap.Shifted)
+		e.log.Warn("ifIndex shift", "device", d.Name, "ports", snap.Shifted)
+	}
+	if e.Refresh(d.ID) {
+		_ = e.st.AddAudit("system", "automatic refresh", d.Name, reason)
+	}
+}
+
+func shortNames(names []string) string {
+	const max = 5
+	if len(names) <= max {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:max], ", ") + fmt.Sprintf(" and %d more", len(names)-max)
+}
+
+func (e *Engine) pollOnce(ctx context.Context, id int64, t snmpx.Target, objs []store.Object) (snmpx.PollResult, error) {
 	select {
 	case e.pollSem <- struct{}{}:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return snmpx.PollResult{}, ctx.Err()
 	}
 	defer func() { <-e.pollSem }()
 	l := e.deviceLock(id)
@@ -397,10 +493,10 @@ func (e *Engine) pollOnce(ctx context.Context, id int64, t snmpx.Target, objs []
 	defer l.Unlock()
 	s, err := e.dial(t)
 	if err != nil {
-		return nil, err
+		return snmpx.PollResult{}, err
 	}
 	defer s.Close()
-	return snmpx.Poll(s, objs)
+	return snmpx.PollDevice(s, objs)
 }
 
 // Snapshot returns the latest poll result of a device, or nil.
@@ -463,7 +559,11 @@ func (e *Engine) DiscoverNow(id int64) error {
 	}
 	err = e.discover(d)
 	if err != nil {
-		_ = e.st.SetDiscoveryError(id, err.Error())
+		msg := err.Error()
+		if c, cerr := e.st.Credential(d.CredentialID); cerr == nil {
+			msg = snmpx.Explain(err, c.Version, snmpx.SourceAddress(d.Address)).Error()
+		}
+		_ = e.st.SetDiscoveryError(id, msg)
 		return err
 	}
 	e.Reload(id)
@@ -523,7 +623,7 @@ func (e *Engine) Test(t snmpx.Target) (snmpx.SystemInfo, error) {
 		}
 	}
 	if len(pdus) == 0 {
-		return info, errors.New("no answer to sysDescr")
+		return info, snmpx.ErrNoData
 	}
 	return info, nil
 }

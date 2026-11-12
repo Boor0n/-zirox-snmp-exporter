@@ -7,7 +7,8 @@
   </select>
 </label>
 <div class="v12-fields">
-  <label>Community <input name="community" type="password" autocomplete="off" placeholder="{{if .ID}}•••••• (empty = keep current){{end}}"></label>
+  <label>Community <input name="community" type="password" autocomplete="off" placeholder="{{if .ID}}•••••• (empty = keep current){{end}}" data-community></label>
+  <p class="flash warn small" data-community-warn hidden>The community contains <b>@</b>. Cisco reads <code>name@context</code> as community <code>name</code> with SNMP context <code>context</code>, so polls fail with <i>authorizationError</i>. Use a community without <b>@</b> if you can.</p>
 </div>
 <div class="v3-fields">
   <label>User <input name="v3_user" value="{{.V3User}}" autocomplete="off"></label>

@@ -26,7 +26,12 @@
     <div class="small muted">Timeout {{secs .Eff.Timeout}} s, retries {{.Eff.Retries}}</div>
     {{if .Snap}}
       <div>Last poll: {{ago .Snap.At}}, {{dur .Snap.Duration}}, values: {{.SampleCount}}</div>
-      {{if .Snap.OK}}<span class="badge ok">OK</span>{{else}}<span class="badge bad">error ×{{.Snap.Fails}}</span> <div class="small">{{.Snap.Err}}</div><div class="small muted">Last success: {{ago .Snap.LastOK}}</div>{{end}}
+      {{if and .Snap.OK .Snap.Partial}}<span class="badge warn">partial</span> <div class="small">{{.Snap.Err}}</div>
+      {{else if .Snap.OK}}<span class="badge ok">OK</span>
+      {{else}}<span class="badge bad">error ×{{.Snap.Fails}}</span> <div class="small"><b>{{.Snap.Err}}</b></div>{{with .Snap.Hint}}<div class="small">{{.}}</div>{{end}}<div class="small muted">Last success: {{ago .Snap.LastOK}}</div>{{end}}
+      {{if .Snap.HasUptime}}<div class="small">Device uptime: <b>{{uptime .Snap.Uptime}}</b></div>{{end}}
+      {{if not .Snap.LastReboot.IsZero}}<div class="small">Restarted {{ago .Snap.LastReboot}}; Zirox refreshed it automatically</div>{{end}}
+      {{with .Snap.Shifted}}<div class="flash warn small">Port numbering changed on the device ({{len .}} port{{if gt (len .) 1}}s{{end}}). Their values are held back until the automatic Refresh maps them again.</div>{{end}}
     {{else}}<div class="muted">Not polled yet</div>{{end}}
   </div>
   <div class="card">
