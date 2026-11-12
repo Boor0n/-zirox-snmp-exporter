@@ -41,6 +41,8 @@ type Server struct {
 	cfg   Config
 	log   *slog.Logger
 	pages map[string]*template.Template
+	jobs  jobs
+	upd   updateChecker
 }
 
 // New parses the templates and returns the UI server.
@@ -87,6 +89,13 @@ func (s *Server) Register(mux *http.ServeMux) {
 	a("POST /devices/{id}/delete", s.deviceDelete)
 	a("POST /devices/{id}/selection", s.deviceSelection)
 	p("GET /devices/{id}/status", s.deviceStatus)
+	p("GET /devices/{id}/diagnose", s.deviceDiagnose)
+	p("GET /checks/{job}", s.checkPage)
+	p("GET /checks/{job}/csv", s.checkCSV)
+	a("GET /scan", s.scanPage)
+	a("POST /scan", s.scanStart)
+	a("GET /scan/{job}", s.scanPage)
+	a("POST /scan/{job}/add", s.scanAdd)
 	p("GET /credentials", s.credentials)
 	a("GET /credentials/new", s.credentialForm)
 	a("POST /credentials/new", s.credentialSave)
@@ -268,6 +277,9 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	data["User"] = u.Name
 	data["CanEdit"] = u.Role == store.RoleAdmin
 	data["Version"] = s.cfg.Version
+	if tag, url := s.upd.Latest(); newer(tag, s.cfg.Version) {
+		data["UpdateTag"], data["UpdateURL"] = tag, url
+	}
 	if m := r.URL.Query().Get("msg"); m != "" {
 		data["Flash"] = m
 	}
@@ -287,7 +299,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 var pageTitles = map[string]string{
 	"devices": "Devices", "device": "Device", "device_form": "Device", "credentials": "Credentials",
 	"credential_form": "Credentials", "profiles": "Poll profiles", "settings": "Settings", "import": "Import",
-	"custom_oids": "Custom OIDs", "prometheus": "Prometheus", "audit": "Change log", "users": "Users", "login": "Log in",
+	"custom_oids": "Custom OIDs", "diagnose": "Diagnostics", "check": "Access check", "scan": "Find devices", "prometheus": "Prometheus", "audit": "Change log", "users": "Users", "login": "Log in",
 }
 
 func redirect(w http.ResponseWriter, r *http.Request, path, msg string) {
@@ -631,7 +643,11 @@ func (s *Server) deviceSave(w http.ResponseWriter, r *http.Request) {
 	warn := communityWarning(c, s.en)
 	if isNew || before.Address != d.Address || before.Port != d.Port || before.CredentialID != d.CredentialID || before.LastDiscovery.IsZero() {
 		s.en.Refresh(d.ID)
-		redirectWarn(w, r, fmt.Sprintf("/devices/%d", d.ID), "Device saved, full discovery running", warn)
+		path := fmt.Sprintf("/devices/%d", d.ID)
+		if isNew {
+			path += "?wizard=1"
+		}
+		redirectWarn(w, r, path, "Device saved, full discovery running", warn)
 		return
 	}
 	s.en.Reload(d.ID)
@@ -646,12 +662,22 @@ func (s *Server) deviceTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	eff := s.en.Resolve(d)
-	info, err := s.en.Test(snmpx.Target{Address: d.Address, Port: d.Port, Cred: c, Timeout: max(eff.Timeout, 3*time.Second), Retries: 1})
+	diag := s.en.DiagnoseTarget(snmpx.Target{Address: d.Address, Port: d.Port, Cred: c, Timeout: eff.Timeout, Retries: 1})
+	data, err := s.formLists()
 	if err != nil {
-		s.rerenderDeviceForm(w, r, d, snmpx.Explain(err, c.Version, snmpx.SourceAddress(d.Address)).Error(), false)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.rerenderDeviceForm(w, r, d, fmt.Sprintf("Device answered: %s — %s", info.SysName, firstLine(info.SysDescr)), true)
+	if d.Name == "" && diag.Info.SysName != "" && d.ID == 0 {
+		d.Name = deviceNameFor(scanRow{Address: d.Address, Info: diag.Info})
+	}
+	data["Device"] = d
+	// Keep what the user typed so the device can be saved right after the check.
+	data["Cred"] = credFromForm(r)
+	data["NewCred"] = r.FormValue("credential_id") == "new"
+	data["Diag"] = diag
+	data["Step"] = 2
+	s.render(w, r, "device_form", data)
 }
 
 func (s *Server) resolveCredentialNoSave(r *http.Request) (store.Credential, error) {
@@ -739,6 +765,7 @@ func (s *Server) deviceCard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "device", map[string]any{
 		"Device": d, "Groups": groups, "Snap": snap, "Eff": s.en.Resolve(d), "Discovering": s.en.Discovering(d.ID),
 		"New": nNew, "Missing": nMissing, "Credential": cred, "SampleCount": sampleCount(snap),
+		"Wizard": r.URL.Query().Get("wizard") == "1",
 	})
 }
 
@@ -850,6 +877,10 @@ func (s *Server) deviceBulk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := r.FormValue("action")
+	if action == "check" {
+		http.Redirect(w, r, "/checks/"+s.StartCheck(ids, fmt.Sprintf("%d selected devices", len(ids))), http.StatusSeeOther)
+		return
+	}
 	var names []string
 	for _, id := range ids {
 		if d, err := s.st.Device(id); err == nil {
@@ -1107,6 +1138,7 @@ func (s *Server) importPage(w http.ResponseWriter, r *http.Request) {
 
 // ImportResult reports one CSV line.
 type ImportResult struct {
+	ID   int64
 	Line int
 	Name string
 	OK   bool
@@ -1135,6 +1167,13 @@ func (s *Server) importSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["Imported"] = ok
+	var ids []string
+	for _, res := range results {
+		if res.OK {
+			ids = append(ids, strconv.FormatInt(res.ID, 10))
+		}
+	}
+	data["ImportedIDs"] = ids
 	if ok > 0 {
 		s.audit(r, "import", fmt.Sprintf("%d devices", ok), fmt.Sprintf("%d lines, %d failed", len(results), len(results)-ok))
 	}
@@ -1218,7 +1257,7 @@ func (s *Server) ImportCSV(src io.Reader, defaultCred, defaultProfile string) ([
 			continue
 		}
 		s.en.Refresh(d.ID)
-		res.OK, res.Msg = true, "added, full discovery running"
+		res.ID, res.OK, res.Msg = d.ID, true, "added, full discovery running"
 		out = append(out, res)
 	}
 	return out, nil

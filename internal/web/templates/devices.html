@@ -27,7 +27,7 @@
   {{range .Rows}}{{$st := status .}}
   <tr class="st-{{$st}}{{if not .Enabled}} off{{end}}">
     <td><input type="checkbox" name="ids" value="{{.ID}}" aria-label="Select {{.Name}}"></td>
-    <td data-v="{{.Name}}"><a class="devname" href="/devices/{{.ID}}"><b>{{.Name}}</b></a><div class="muted small">{{.Address}}{{if ne .Port 161}}:{{.Port}}{{end}}{{if and .SysName (ne .SysName .Name)}} · {{.SysName}}{{end}}</div></td>
+    <td data-v="{{.Name}}"><a class="devname" href="/devices/{{.ID}}"><b>{{.Name}}</b></a><div class="muted small">{{.Address}}{{if ne .Port 161}}:{{.Port}}{{end}}{{if and .SysName (ne .SysName .Name)}} · {{.SysName}}{{end}}{{with .Model}} · {{.}}{{end}}</div></td>
     <td data-v="{{.Group}}">{{.Group}}</td>
     <td data-v="{{if eq $st "failing"}}0{{else if eq $st "discovering"}}1{{else if eq $st "pending"}}2{{else if eq $st "ok"}}3{{else}}4{{end}}">
       {{if not .Enabled}}<span class="badge">disabled</span>
@@ -52,6 +52,7 @@
 </table></div>
 {{if .CanEdit}}<div class="bulk" data-bulk>
   <span data-bulk-count>Selected:</span>
+  <button name="action" value="check" title="Check SNMP access step by step and list what to fix">Check access</button>
   <button name="action" value="refresh">Refresh</button>
   <button name="action" value="enable">Enable</button>
   <button name="action" value="disable">Disable</button>

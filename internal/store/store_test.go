@@ -36,23 +36,19 @@ func TestMigrateSingleAdmin(t *testing.T) {
 func TestSchemaMigrations(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "z.db")
+	saved := migrations
+	defer func() { migrations = saved }()
+
+	// A database of v0.4: baseline tables, no user_version.
+	migrations = nil
 	st, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := st.userVersion(); v != SchemaVersion() {
-		t.Fatalf("fresh database at schema %d, want %d", v, SchemaVersion())
-	}
-	if b, _ := filepath.Glob(filepath.Join(dir, "backups", "*")); len(b) != 0 {
-		t.Fatalf("fresh database must not be backed up: %v", b)
-	}
-	// Simulate a database of v0.4 (no user_version) with data in it.
 	_ = st.SetSetting("x", "y")
 	_, _ = st.db.Exec(`PRAGMA user_version = 0`)
 	st.Close()
 
-	saved := migrations
-	defer func() { migrations = saved }()
 	migrations = append(append([]string{}, saved...), `ALTER TABLE objects ADD COLUMN test_col TEXT NOT NULL DEFAULT ''`)
 	st, err = Open(path)
 	if err != nil {
@@ -64,6 +60,9 @@ func TestSchemaMigrations(t *testing.T) {
 	if _, err := st.db.Exec(`SELECT test_col FROM objects`); err != nil {
 		t.Fatalf("migration not applied: %v", err)
 	}
+	if _, err := st.Devices(); err != nil {
+		t.Fatalf("devices after migration: %v", err)
+	}
 	b, _ := filepath.Glob(filepath.Join(dir, "backups", "*.db"))
 	if len(b) != 1 || !strings.Contains(b[0], "before-schema") {
 		t.Fatalf("no backup before migration: %v", b)
@@ -71,17 +70,32 @@ func TestSchemaMigrations(t *testing.T) {
 	st.Close()
 
 	// An older build opening the newer database keeps working.
-	migrations = saved
+	migrations = saved[:len(saved)-1]
 	st, err = Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if st.NewerSchema != SchemaVersion()+1 {
+	if st.NewerSchema != SchemaVersion()+2 {
 		t.Errorf("NewerSchema = %d", st.NewerSchema)
 	}
 	if st.GetSetting("x", "") != "y" {
 		t.Error("data lost")
+	}
+}
+
+func TestFreshSchema(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Open(filepath.Join(dir, "z.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if v, _ := st.userVersion(); v != SchemaVersion() {
+		t.Fatalf("fresh database at schema %d, want %d", v, SchemaVersion())
+	}
+	if b, _ := filepath.Glob(filepath.Join(dir, "backups", "*")); len(b) != 0 {
+		t.Fatalf("fresh database must not be backed up: %v", b)
 	}
 }
 

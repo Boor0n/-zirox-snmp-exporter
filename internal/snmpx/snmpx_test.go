@@ -409,3 +409,79 @@ func TestExplain(t *testing.T) {
 		t.Error("community warning")
 	}
 }
+
+func TestIdentify(t *testing.T) {
+	a := snmptest.Switch(2)
+	// A stack of two C9300 chassis.
+	a.Set("1.3.6.1.2.1.47.1.1.1.1.5.1000", 3)
+	a.Set("1.3.6.1.2.1.47.1.1.1.1.5.2000", 3)
+	a.Set("1.3.6.1.2.1.47.1.1.1.1.5.1001", 9)
+	a.Set("1.3.6.1.2.1.47.1.1.1.1.13.1000", "C9300-48P")
+	a.Set("1.3.6.1.2.1.47.1.1.1.1.10.1000", "17.09.04a")
+	a.Set("1.3.6.1.2.1.47.1.1.1.1.11.1000", "FOC1234X0AB")
+	info, _ := discover(t, a)
+	if info.Model != "C9300-48P ×2" || info.Version != "17.09.04a" || info.Serial != "FOC1234X0AB" || info.Vendor != "Cisco" {
+		t.Errorf("identity = %+v", info.Identity)
+	}
+
+	cases := []struct{ descr, oid, model, version string }{
+		{"Cisco NX-OS(tm) n9000, Software (n9000-dk9), Version 9.3(8), RELEASE SOFTWARE", ".1.3.6.1.4.1.9.12.3.1.3.1812", "Cisco Nexus 9000", "9.3(8)"},
+		{"Cisco Adaptive Security Appliance Version 9.16(4)", "1.3.6.1.4.1.9.1.2313", "Cisco ASA", "9.16(4)"},
+		{"Linux idrac 4.9.20 #1", "1.3.6.1.4.1.674.10892.5", "Linux", "4.9.20"},
+		{"Cisco IOS XR Software (NCS-540), Version 7.5.2", "1.3.6.1.4.1.9.1.2984", "Cisco IOS XR", "7.5.2"},
+		{"something", "1.3.6.1.4.1.99999.1", "enterprise 99999", ""},
+	}
+	for _, c := range cases {
+		id := snmpx.IdentifyFromSystem(c.descr, c.oid)
+		if id.Model != c.model || id.Version != c.version {
+			t.Errorf("%q: model %q version %q, want %q %q", c.descr, id.Model, id.Version, c.model, c.version)
+		}
+	}
+}
+
+func TestDiagnose(t *testing.T) {
+	a := snmptest.Switch(4)
+	tg := snmpx.Target{Address: "127.0.0.1", Cred: store.Credential{Version: "2c", Community: "public"}, Timeout: time.Second}
+	dialOK := func(snmpx.Target) (snmpx.Session, error) { return a.Dial() }
+	timeout := func(snmpx.Target) (snmpx.Session, error) { return nil, errors.New("request timeout (after 1 retries)") }
+	answers := func(string, int, time.Duration) bool { return true }
+	silent := func(string, int, time.Duration) bool { return false }
+	status := func(d snmpx.Diagnosis) string {
+		var b strings.Builder
+		for _, s := range d.Steps {
+			b.WriteString(s.Status[:1])
+		}
+		return b.String()
+	}
+
+	d := snmpx.Diagnose(tg, dialOK, silent)
+	if !d.OK || status(d) != "ooooo" || d.Source == "" || d.Info.SysName != "core-nx-01" || d.Info.Model != "Cisco Nexus 9000" {
+		t.Fatalf("healthy device: %s %+v", status(d), d)
+	}
+	d = snmpx.Diagnose(tg, timeout, answers)
+	if d.OK || status(d) != "ooofs" || d.Problem != snmpx.ProblemCredential {
+		t.Errorf("wrong community: %s %s", status(d), d.Problem)
+	}
+	d = snmpx.Diagnose(tg, timeout, silent)
+	if status(d) != "oofss" || d.Problem != snmpx.ProblemTimeout || len(d.Steps[2].Snippets) == 0 ||
+		!strings.Contains(d.Steps[2].Snippets[0].Text, "permit host "+d.Source) {
+		t.Errorf("no answer: %s %+v", status(d), d.Steps[2])
+	}
+	authz := func(snmpx.Target) (snmpx.Session, error) {
+		return nil, &snmpx.StatusError{Status: gosnmp.AuthorizationError}
+	}
+	tg.Cred.Community = "ro@es0"
+	d = snmpx.Diagnose(tg, authz, silent)
+	if status(d) != "ooofs" || d.Problem != snmpx.ProblemAuthz || !strings.Contains(d.Steps[3].Hint, "'@'") {
+		t.Errorf("authorizationError: %s %+v", status(d), d.Steps[3])
+	}
+	a.Delete("1.3.6.1.2.1.2.2.1.2")
+	d = snmpx.Diagnose(tg, dialOK, silent)
+	if d.OK || status(d) != "oooof" || d.Failed != "SNMP view" {
+		t.Errorf("hidden ifTable: %s %s", status(d), d.Failed)
+	}
+	tg.Address = "no-such-host.invalid"
+	if d = snmpx.Diagnose(tg, dialOK, silent); status(d) != "fssss" || d.Problem != snmpx.ProblemDNS {
+		t.Errorf("bad name: %s", status(d))
+	}
+}

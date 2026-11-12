@@ -19,6 +19,10 @@ var migrations = []string{
 	// 2: ports whose ifIndex moved are refreshed automatically; nothing to
 	// store yet, the version marks databases opened by v0.5+.
 	``,
+	// 3: hardware model, software version and serial number of devices.
+	`ALTER TABLE devices ADD COLUMN model TEXT NOT NULL DEFAULT '';
+	 ALTER TABLE devices ADD COLUMN sw_version TEXT NOT NULL DEFAULT '';
+	 ALTER TABLE devices ADD COLUMN serial TEXT NOT NULL DEFAULT '';`,
 }
 
 // backupsKept is how many automatic database backups stay on disk.

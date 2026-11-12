@@ -147,7 +147,8 @@ var (
 	descLastOK   = prometheus.NewDesc("zirox_poll_last_success_timestamp_seconds", "Unix time of the last successful poll.", nil, nil)
 	descSamples  = prometheus.NewDesc("zirox_poll_samples", "Number of values returned by the last poll.", nil, nil)
 	descInterval = prometheus.NewDesc("zirox_poll_interval_seconds", "Effective poll interval of the device.", nil, nil)
-	descInfo     = prometheus.NewDesc("zirox_device_info", "Device information from the last discovery.", []string{"sysName", "sysDescr", "sysObjectID"}, nil)
+	descInfo     = prometheus.NewDesc("zirox_device_info", "Device information from the last discovery.", infoLabels, nil)
+	infoLabels   = []string{"sysName", "sysDescr", "sysObjectID", "model", "version", "serial"}
 )
 
 type deviceCollector struct {
@@ -173,8 +174,8 @@ func emitDevice(ch chan<- prometheus.Metric, d store.Device, snap *engine.Snapsh
 		}
 		return prometheus.NewDesc(name, help, append(append([]string{}, extraKeys...), keys...), nil)
 	}
-	info := withExtra(descInfo, "zirox_device_info", "Device information from the last discovery.", []string{"sysName", "sysDescr", "sysObjectID"})
-	constMetric(info, prometheus.GaugeValue, 1, d.SysName, d.SysDescr, d.SysObjectID)
+	info := withExtra(descInfo, "zirox_device_info", "Device information from the last discovery.", infoLabels)
+	constMetric(info, prometheus.GaugeValue, 1, d.SysName, d.SysDescr, d.SysObjectID, d.Model, d.SWVersion, d.Serial)
 	up := 0.0
 	if snap != nil && snap.OK {
 		up = 1

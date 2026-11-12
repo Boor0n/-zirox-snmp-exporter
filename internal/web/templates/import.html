@@ -2,7 +2,12 @@
 <h1>Import devices from CSV</h1>
 {{with .Error}}<div class="flash err" role="alert">{{.}}</div>{{end}}
 {{if .Results}}
-<div class="flash ok">Added: {{.Imported}} of {{len .Results}}. Full discovery of new devices runs in the background (at most 8 at a time).</div>
+<div class="flash ok">Added: {{.Imported}} of {{len .Results}}. Full discovery of new devices runs in the background.</div>
+{{if .ImportedIDs}}<form method="post" action="/devices/bulk" class="buttons">
+  {{range .ImportedIDs}}<input type="hidden" name="ids" value="{{.}}">{{end}}
+  <button class="primary" name="action" value="check">Check access of the {{len .ImportedIDs}} new devices</button>
+  <span class="muted small">Lists which devices answer, which do not and why, and what to add to ACLs.</span>
+</form>{{end}}
 <div class="table-wrap"><table class="list">
   <thead><tr><th>Line</th><th>Device</th><th>Result</th></tr></thead>
   <tbody>{{range .Results}}<tr class="{{if not .OK}}errrow{{end}}"><td>{{.Line}}</td><td>{{.Name}}</td><td>{{.Msg}}</td></tr>{{end}}</tbody>

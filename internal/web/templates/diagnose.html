@@ -1,0 +1,17 @@
+{{define "content"}}
+{{$d := .Device}}
+<div class="bar">
+  <div>
+    <h1>Diagnostics: {{$d.Name}}</h1>
+    <div class="muted">{{$d.Address}}{{if ne $d.Port 161}}:{{$d.Port}}{{end}}</div>
+  </div>
+  <div class="buttons">
+    <a class="btn primary" href="/devices/{{$d.ID}}/diagnose">Run again</a>
+    <a class="btn" href="/devices/{{$d.ID}}">Back to device</a>
+  </div>
+</div>
+<div class="card">
+  {{if .Diag.OK}}<div class="flash ok">Zirox can reach and read this device.</div>{{else}}<div class="flash err">Stopped at <b>{{.Diag.Failed}}</b>. Fix it with the hint below and run the check again.</div>{{end}}
+  {{template "ladder" .Diag}}
+</div>
+{{end}}

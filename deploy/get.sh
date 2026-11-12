@@ -186,6 +186,14 @@ ZIROX_ADMIN_PASSWORD=$password
 EOF
 	chmod 0640 "$ENV_FILE"
 fi
+# Zirox checks GitHub for a newer release twice a day (only the release
+# number is fetched). Behind a proxy it needs the proxy too; set
+# ZIROX_UPDATE_CHECK=0 in the settings file to turn the check off.
+proxy=${https_proxy:-${HTTPS_PROXY:-}}
+if [ -n "$proxy" ] && ! grep -q '^HTTPS_PROXY=' "$ENV_FILE"; then
+	echo "HTTPS_PROXY=$proxy" >>"$ENV_FILE"
+fi
+grep -q 'ZIROX_UPDATE_CHECK' "$ENV_FILE" || echo "#ZIROX_UPDATE_CHECK=0" >>"$ENV_FILE"
 
 if [ "$mode" = docker ]; then
 	if command -v systemctl >/dev/null && systemctl is-active --quiet zirox 2>/dev/null; then
